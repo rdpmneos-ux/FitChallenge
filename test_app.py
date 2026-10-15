@@ -301,5 +301,16 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         app.clear_failures(ip, tracker)
         self.assertFalse(app.is_rate_limited(ip, tracker, limit=5, window_seconds=300))
 
+    def test_download_apk(self):
+        res = self.client.get("/descargar-apk")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get("Content-Type"), "application/vnd.android.package-archive")
+        self.assertIn("FitChallenge.apk", res.headers.get("Content-Disposition", ""))
+
+        res2 = self.client.get("/download/apk")
+        self.assertEqual(res2.status_code, 200)
+
 if __name__ == "__main__":
     unittest.main()
+
+

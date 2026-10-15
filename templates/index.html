@@ -123,6 +123,11 @@
                     <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
                     <span class="hidden sm:inline font-bold">Instalar</span>
                 </button>
+                <!-- Direct APK Download Link -->
+                <a href="/descargar-apk" title="Descargar APK Nativa para Android" class="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 transition">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                    <span class="hidden sm:inline font-bold">Descargar APK</span>
+                </a>
                 <!-- Login Button (when unauthenticated) -->
                 <button id="header-login-btn" onclick="showAuthModal(true)" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition">
                     <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
@@ -144,12 +149,16 @@
                         <span>Acceso directo en tu teléfono</span>
                         <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">1 toque</span>
                     </div>
-                    <p class="text-[11px] text-slate-400 truncate">Crea el icono en tu pantalla principal para entrar directo como una app nativa</p>
+                    <p class="text-[11px] text-slate-400 truncate">Instala el icono en pantalla o descarga la APK oficial para Android</p>
                 </div>
             </div>
-            <div class="flex items-center gap-1.5 shrink-0">
-                <button type="button" onclick="triggerPwaInstall()" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/25 hover:opacity-95 transition flex items-center gap-1.5">
+            <div class="flex items-center gap-2 shrink-0">
+                <a href="/descargar-apk" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 text-xs font-bold transition flex items-center gap-1.5">
                     <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                    <span class="hidden sm:inline">Descargar</span> APK
+                </a>
+                <button type="button" onclick="triggerPwaInstall()" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/25 hover:opacity-95 transition flex items-center gap-1.5">
+                    <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
                     <span>Añadir a Pantalla</span>
                 </button>
                 <button type="button" onclick="dismissInstallBanner()" title="Cerrar aviso" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-200">
@@ -788,6 +797,24 @@
             </div>
 
             <div class="space-y-3 text-xs text-slate-300">
+                <!-- Native APK Download Option -->
+                <div class="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/20 via-slate-900 to-slate-950 border border-emerald-500/40 space-y-2.5 shadow-lg">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 inline-flex items-center justify-center text-[11px] font-black">★</span>
+                            <span class="font-bold text-white text-xs">Instalar APK Nativa Android</span>
+                        </div>
+                        <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">Recomendado</span>
+                    </div>
+                    <p class="text-[11px] text-slate-300 leading-relaxed">
+                        Descarga el archivo instalador oficial <strong>.apk</strong> e instálalo directamente en tu celular Android.
+                    </p>
+                    <a href="/descargar-apk" class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs transition shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        <span>Descargar FitChallenge.apk</span>
+                    </a>
+                </div>
+
                 <!-- Android Chrome Instructions -->
                 <div class="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2">
                     <div class="font-bold text-white flex items-center gap-2">

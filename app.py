@@ -3,7 +3,7 @@ import re
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 import models
 import seed_data
 
@@ -186,6 +186,19 @@ def require_auth():
 def index():
     google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
     return render_template("index.html", google_client_id=google_client_id)
+
+@app.route("/descargar-apk")
+@app.route("/download/apk")
+def download_apk():
+    apk_path = os.path.join(app.root_path, "static", "download", "FitChallenge.apk")
+    if os.path.exists(apk_path):
+        return send_file(
+            apk_path,
+            as_attachment=True,
+            download_name="FitChallenge.apk",
+            mimetype="application/vnd.android.package-archive"
+        )
+    return jsonify({"error": "APK no encontrado"}), 404
 
 # ==========================================
 # AUTHENTICATION ENDPOINTS
