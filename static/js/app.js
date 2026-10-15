@@ -428,6 +428,7 @@ function openAddExerciseModal() {
     document.getElementById("modal-previous-session-banner").classList.add("hidden");
     lastFetchedPreviousSession = null;
     closeExerciseDropdown();
+    updateClearButtonVisibility();
 
     // Initialize 3 default sets
     currentModalSets = [
@@ -531,11 +532,42 @@ function selectExerciseFromDropdown(name, muscle) {
     }
 
     closeExerciseDropdown();
+    updateClearButtonVisibility();
     onModalExerciseInput(name);
+}
+
+function updateClearButtonVisibility() {
+    const input = document.getElementById("modal-exercise-input");
+    const clearBtn = document.getElementById("clear-exercise-input-btn");
+    if (!input || !clearBtn) return;
+    if (input.value && input.value.trim().length > 0) {
+        clearBtn.classList.remove("hidden");
+    } else {
+        clearBtn.classList.add("hidden");
+    }
+    lucide.createIcons();
+}
+
+function clearExerciseInput(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const input = document.getElementById("modal-exercise-input");
+    if (input) {
+        input.value = "";
+        input.focus();
+    }
+    document.getElementById("modal-previous-session-banner").classList.add("hidden");
+    lastFetchedPreviousSession = null;
+    updateClearButtonVisibility();
+    renderExerciseDropdownItems("");
+    openExerciseDropdown();
 }
 
 let inputDebounceTimer = null;
 function onModalExerciseInput(val) {
+    updateClearButtonVisibility();
     renderExerciseDropdownItems(val);
     const menu = document.getElementById("exercise-dropdown-menu");
     if (menu && menu.classList.contains("hidden") && val) {

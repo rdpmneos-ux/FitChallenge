@@ -415,13 +415,23 @@
                                 autocomplete="off"
                                 onfocus="openExerciseDropdown()"
                                 oninput="onModalExerciseInput(this.value)"
-                                class="w-full bg-slate-800/90 border border-slate-700 rounded-xl pl-4 pr-11 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                                class="w-full bg-slate-800/90 border border-slate-700 rounded-xl pl-4 pr-20 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
                             
-                            <button type="button" id="exercise-dropdown-toggle-btn" onclick="toggleExerciseDropdown(event)" 
-                                title="Desplegar lista de ejercicios"
-                                class="absolute right-1.5 p-2 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-700/60 transition flex items-center justify-center">
-                                <i data-lucide="chevron-down" id="exercise-dropdown-chevron" class="w-4 h-4 transition-transform duration-200"></i>
-                            </button>
+                            <div class="absolute right-1.5 flex items-center gap-0.5">
+                                <!-- 1-Click Clear Button -->
+                                <button type="button" id="clear-exercise-input-btn" onclick="clearExerciseInput(event)" 
+                                    title="Borrar ejercicio seleccionado (1 click)"
+                                    class="hidden p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 transition flex items-center justify-center">
+                                    <i data-lucide="x" class="w-4 h-4"></i>
+                                </button>
+
+                                <!-- Dropdown Toggle Arrow -->
+                                <button type="button" id="exercise-dropdown-toggle-btn" onclick="toggleExerciseDropdown(event)" 
+                                    title="Desplegar lista de ejercicios"
+                                    class="p-2 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-700/60 transition flex items-center justify-center">
+                                    <i data-lucide="chevron-down" id="exercise-dropdown-chevron" class="w-4 h-4 transition-transform duration-200"></i>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Custom Dropdown Menu -->
