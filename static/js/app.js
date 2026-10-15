@@ -328,7 +328,10 @@ function renderExercisesList(exercises) {
                     <div>
                         <div class="flex items-center gap-2">
                             <h4 class="text-base font-bold text-white">${escapeHtml(ex.exercise_name)}</h4>
-                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700/60">${escapeHtml(ex.muscle_group)}</span>
+                            <button type="button" onclick="promptChangeMuscleGroup('${escapeHtml(ex.exercise_name)}', '${escapeHtml(ex.muscle_group)}')" title="Toca para cambiar grupo muscular" class="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700/60 transition flex items-center gap-1 cursor-pointer">
+                                <span>${escapeHtml(ex.muscle_group)}</span>
+                                <i data-lucide="edit-2" class="w-2.5 h-2.5 opacity-60"></i>
+                            </button>
                         </div>
                         <p class="text-[11px] text-slate-400 mt-0.5">${prevText}</p>
                     </div>
@@ -705,7 +708,62 @@ async function deleteExercise(exerciseId) {
         currentWorkout = data.workout;
         renderExercisesList(currentWorkout ? currentWorkout.exercises : []);
         renderWeekStrip();
+        fetchPopularExercises();
         showToast("Ejercicio eliminado");
+    } catch (e) {
+        console.error("Error al eliminar ejercicio:", e);
+    }
+}
+
+async function promptChangeMuscleGroup(exerciseName, currentGroup) {
+    const groups = ["Piernas", "Pecho", "Espalda", "Hombros", "Brazos", "Core", "General"];
+    const promptText = `Elige el nuevo grupo muscular para "${exerciseName}":\n\n` + 
+        groups.map((g, idx) => `${idx + 1}. ${g}`).join("\n") + 
+        `\n\nIngresa el número (1-${groups.length}) o el nombre:`;
+    
+    const choice = prompt(promptText, "1");
+    if (!choice) return;
+
+    let selectedGroup = "";
+    const num = parseInt(choice.trim());
+    if (!isNaN(num) && num >= 1 && num <= groups.length) {
+        selectedGroup = groups[num - 1];
+    } else {
+        const found = groups.find(g => g.toLowerCase() === choice.trim().toLowerCase());
+        selectedGroup = found || choice.trim();
+    }
+
+    if (!selectedGroup) return;
+
+    try {
+        const res = await fetch("/api/exercise/update_muscle_group", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ exercise_name: exerciseName, muscle_group: selectedGroup })
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            showToast(`Grupo de "${exerciseName}" cambiado a ${selectedGroup}`);
+            await fetchPopularExercises();
+            await loadWorkoutForDate(currentDate);
+        }
+    } catch (e) {
+        console.error("Error al actualizar grupo muscular:", e);
+    }
+}
+
+async function deleteEntireExercise(exerciseName) {
+    if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente el ejercicio "${exerciseName}" y todos sus registros de la app?`)) return;
+    try {
+        const res = await fetch("/api/exercise/delete_by_name", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ exercise_name: exerciseName })
+        });
+        const data = await res.json();
+        showToast(data.message || "Ejercicio eliminado");
+        await fetchPopularExercises();
+        await loadWorkoutForDate(currentDate);
     } catch (e) {
         console.error("Error al eliminar ejercicio:", e);
     }

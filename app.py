@@ -17,10 +17,15 @@ DEFAULT_EXERCISES = [
     {"name": "Jalón al Pecho", "muscle": "Espalda"},
     {"name": "Remo Gironda", "muscle": "Espalda"},
     {"name": "Sentadilla con Barra", "muscle": "Piernas"},
+    {"name": "Hip Thrust", "muscle": "Piernas"},
     {"name": "Prensa de Piernas", "muscle": "Piernas"},
     {"name": "Peso Muerto Rumano", "muscle": "Piernas / Isquios"},
+    {"name": "Sentadilla Búlgara", "muscle": "Piernas"},
+    {"name": "Zancadas / Lunges", "muscle": "Piernas"},
     {"name": "Extensiones de Cuádriceps", "muscle": "Piernas"},
     {"name": "Curl Femoral Tumbado", "muscle": "Piernas"},
+    {"name": "Puente de Glúteos", "muscle": "Piernas"},
+    {"name": "Abductores en Máquina", "muscle": "Piernas"},
     {"name": "Elevación de Talones (Gemelos)", "muscle": "Piernas"},
     {"name": "Press Militar con Barra", "muscle": "Hombros"},
     {"name": "Press Militar Mancuernas", "muscle": "Hombros"},
@@ -34,9 +39,16 @@ DEFAULT_EXERCISES = [
     {"name": "Elevaciones de Piernas Colgado", "muscle": "Core"}
 ]
 
-# Initialize database on startup
+# Initialize database and execute auto-migrations on startup
 with app.app_context():
     models.init_db()
+    try:
+        with models.get_db() as conn:
+            # Fix any mistakenly assigned muscle groups
+            conn.execute("UPDATE exercise_logs SET muscle_group = 'Piernas' WHERE LOWER(TRIM(exercise_name)) LIKE '%hip thrust%'")
+            conn.commit()
+    except Exception as e:
+        print("Migration notice:", e)
 
 @app.route("/")
 def index():
@@ -49,14 +61,22 @@ def get_popular_exercises():
         cur.execute("SELECT DISTINCT exercise_name, muscle_group FROM exercise_logs")
         logged = [{"name": row["exercise_name"], "muscle": row["muscle_group"]} for row in cur.fetchall()]
 
-    # Merge unique exercises
+    # Merge unique exercises - prioritize DEFAULT_EXERCISES
     names_seen = set()
     result = []
-    for item in logged + DEFAULT_EXERCISES:
+    for item in DEFAULT_EXERCISES:
         normalized = item["name"].strip().lower()
         if normalized not in names_seen:
             names_seen.add(normalized)
             result.append(item)
+
+    for item in logged:
+        normalized = item["name"].strip().lower()
+        if normalized not in names_seen:
+            names_seen.add(normalized)
+            result.append(item)
+
+    return jsonify({"exercises": result})
 
     return jsonify({"exercises": result})
 
@@ -196,6 +216,32 @@ def get_exercise_history():
         return jsonify({"history": []})
     history = models.get_exercise_all_history(name)
     return jsonify({"history": history})
+
+@app.route("/api/exercise/update_muscle_group", methods=["POST"])
+def update_exercise_muscle_group():
+    data = request.get_json() or {}
+    exercise_name = data.get("exercise_name", "").strip()
+    new_muscle = data.get("muscle_group", "Piernas").strip()
+    if not exercise_name:
+        return jsonify({"error": "Nombre de ejercicio requerido"}), 400
+    with models.get_db() as conn:
+        conn.execute(
+            "UPDATE exercise_logs SET muscle_group = ? WHERE LOWER(TRIM(exercise_name)) = LOWER(TRIM(?))",
+            (new_muscle, exercise_name)
+        )
+        conn.commit()
+    return jsonify({"status": "ok", "message": f"Grupo de '{exercise_name}' actualizado a '{new_muscle}'"})
+
+@app.route("/api/exercise/delete_by_name", methods=["POST"])
+def delete_exercise_by_name():
+    data = request.get_json() or {}
+    exercise_name = data.get("exercise_name", "").strip()
+    if not exercise_name:
+        return jsonify({"error": "Nombre de ejercicio requerido"}), 400
+    with models.get_db() as conn:
+        conn.execute("DELETE FROM exercise_logs WHERE LOWER(TRIM(exercise_name)) = LOWER(TRIM(?))", (exercise_name,))
+        conn.commit()
+    return jsonify({"status": "ok", "message": f"Ejercicio '{exercise_name}' eliminado completamente"})
 
 @app.route("/api/weekly", methods=["GET"])
 def get_weekly():
