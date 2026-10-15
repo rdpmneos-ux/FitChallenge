@@ -6,15 +6,17 @@
     <meta name="theme-color" content="#090d16">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="FitChallenge">
     <meta name="mobile-web-app-capable" content="yes">
-    <link rel="manifest" href="/static/manifest.json">
+    <meta name="application-name" content="FitChallenge">
+    <link rel="manifest" href="/static/manifest.json?v=2.4">
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
     <title>FitChallenge - Control Semanal y Progreso de Entrenamiento</title>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/static/sw.js?v=2.2').then(reg => {
+                navigator.serviceWorker.register('/static/sw.js?v=2.4').then(reg => {
                     reg.update();
                 }).catch(err => console.log('SW registration failed:', err));
             });
@@ -116,6 +118,11 @@
                         <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
                     </button>
                 </div>
+                <!-- Install PWA button -->
+                <button id="install-pwa-btn" onclick="triggerPwaInstall()" title="Crear acceso directo en pantalla principal" class="hidden text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 transition">
+                    <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+                    <span class="hidden sm:inline font-bold">Instalar</span>
+                </button>
                 <!-- Login Button (when unauthenticated) -->
                 <button id="header-login-btn" onclick="showAuthModal(true)" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition">
                     <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
@@ -124,6 +131,33 @@
             </div>
         </div>
     </header>
+
+    <!-- PWA Install / Home Screen Shortcut Prompt Banner -->
+    <div id="pwa-install-banner" class="hidden sticky top-16 z-30 bg-gradient-to-r from-slate-900 via-emerald-950/70 to-slate-900 border-b border-emerald-500/30 backdrop-blur-md px-3.5 sm:px-6 py-2.5 shadow-xl transition-all duration-300">
+        <div class="max-w-6xl mx-auto flex items-center justify-between gap-2.5 sm:gap-4">
+            <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30 shadow-inner">
+                    <i data-lucide="smartphone" class="w-4 h-4"></i>
+                </div>
+                <div class="truncate">
+                    <div class="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>Acceso directo en tu teléfono</span>
+                        <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">1 toque</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400 truncate">Crea el icono en tu pantalla principal para entrar directo como una app nativa</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+                <button type="button" onclick="triggerPwaInstall()" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/25 hover:opacity-95 transition flex items-center gap-1.5">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                    <span>Añadir a Pantalla</span>
+                </button>
+                <button type="button" onclick="dismissInstallBanner()" title="Cerrar aviso" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-200">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Main Container -->
     <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-12">
@@ -735,6 +769,58 @@
         </div>
     </div>
 
+    <!-- Home Screen Shortcut Guide Modal -->
+    <div id="shortcut-guide-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-4 animate-scale-up">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                        <i data-lucide="smartphone" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Icono en Pantalla Principal</h3>
+                        <p class="text-[11px] text-slate-400">Acceso directo en tu teléfono</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeShortcutGuideModal()" class="p-1.5 rounded-xl text-slate-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3 text-xs text-slate-300">
+                <!-- Android Chrome Instructions -->
+                <div class="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2">
+                    <div class="font-bold text-white flex items-center gap-2">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 inline-flex items-center justify-center text-[10px] font-bold">1</span>
+                        <span>En Android (Google Chrome):</span>
+                    </div>
+                    <ol class="list-decimal list-inside space-y-1.5 text-slate-400 pl-1 text-[11px]">
+                        <li>Toca los 3 puntos <strong class="text-white">⋮</strong> arriba a la derecha en Chrome.</li>
+                        <li>Toca <strong class="text-emerald-400">"Añadir a la pantalla de inicio"</strong> o <strong class="text-emerald-400">"Instalar aplicación"</strong>.</li>
+                        <li>Pulsa <strong class="text-white">"Añadir"</strong> para que Android coloque el icono en tu pantalla de inicio.</li>
+                    </ol>
+                </div>
+
+                <!-- iPhone Safari Instructions -->
+                <div class="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2">
+                    <div class="font-bold text-white flex items-center gap-2">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 inline-flex items-center justify-center text-[10px] font-bold">2</span>
+                        <span>En iPhone / iPad (Safari):</span>
+                    </div>
+                    <ol class="list-decimal list-inside space-y-1.5 text-slate-400 pl-1 text-[11px]">
+                        <li>Toca el botón <strong class="text-white">Compartir</strong> (el cuadrado con la flecha hacia arriba <span class="text-xs">⎋</span>) abajo en Safari.</li>
+                        <li>Desliza y selecciona <strong class="text-emerald-400">"Agregar a inicio" ➕</strong>.</li>
+                        <li>Toca <strong class="text-white">"Agregar"</strong> arriba a la derecha.</li>
+                    </ol>
+                </div>
+            </div>
+
+            <button type="button" onclick="closeShortcutGuideModal()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition shadow-lg shadow-emerald-500/20">
+                ¡Entendido!
+            </button>
+        </div>
+    </div>
+
     <!-- Notification Toast -->
     <div id="toast" class="fixed bottom-20 md:bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
         <div class="bg-slate-900 border border-emerald-500/40 text-emerald-300 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-medium">
@@ -744,6 +830,6 @@
     </div>
 
     <!-- Application Script -->
-    <script src="/static/js/app.js?v=2.3"></script>
+    <script src="/static/js/app.js?v=2.4"></script>
 </body>
 </html>

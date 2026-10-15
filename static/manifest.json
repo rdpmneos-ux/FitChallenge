@@ -3,7 +3,7 @@
   "name": "FitChallenge - Control de Entrenamiento",
   "short_name": "FitChallenge",
   "description": "Control semanal de entrenamiento, registro de series, repeticiones y sobrecarga progresiva.",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "background_color": "#090d16",
@@ -11,12 +11,19 @@
   "orientation": "portrait",
   "lang": "es",
   "categories": ["fitness", "sports", "health"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/static/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/static/icons/icon-512.png",
@@ -29,6 +36,15 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Entrenamiento de Hoy",
+      "short_name": "Hoy",
+      "description": "Abrir el entrenamiento del día",
+      "url": "/?source=shortcut",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

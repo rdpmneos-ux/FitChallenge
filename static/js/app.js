@@ -327,8 +327,89 @@ const MONTH_NAMES_ES = [
 const DAY_NAMES_ES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const DAY_SHORT_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
+// ==========================================
+// PWA INSTALLATION & HOME SCREEN SHORTCUT
+// ==========================================
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    // Prevent Chrome from automatically showing mini-infobar
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    checkPwaInstallState();
+});
+
+window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    const installBanner = document.getElementById('pwa-install-banner');
+    const installBtn = document.getElementById('install-pwa-btn');
+    if (installBanner) installBanner.classList.add('hidden');
+    if (installBtn) installBtn.classList.add('hidden');
+    showToast("¡Acceso directo creado en tu pantalla principal!");
+});
+
+function checkPwaInstallState() {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    const installBanner = document.getElementById('pwa-install-banner');
+    const installBtn = document.getElementById('install-pwa-btn');
+
+    if (isStandalone) {
+        // App is already launched from home screen icon
+        if (installBanner) installBanner.classList.add('hidden');
+        if (installBtn) installBtn.classList.add('hidden');
+    } else {
+        // Allow user to trigger install/shortcut at any time
+        if (installBtn) installBtn.classList.remove('hidden');
+        if (installBanner && !sessionStorage.getItem('install_banner_dismissed')) {
+            installBanner.classList.remove('hidden');
+        }
+    }
+}
+
+async function triggerPwaInstall() {
+    if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+            showToast("Creando acceso directo en tu pantalla principal...");
+            const installBanner = document.getElementById('pwa-install-banner');
+            if (installBanner) installBanner.classList.add('hidden');
+        }
+        deferredInstallPrompt = null;
+    } else {
+        // Show step-by-step visual guide for Android or iOS
+        openShortcutGuideModal();
+    }
+}
+
+function dismissInstallBanner() {
+    const installBanner = document.getElementById('pwa-install-banner');
+    if (installBanner) installBanner.classList.add('hidden');
+    sessionStorage.setItem('install_banner_dismissed', 'true');
+}
+
+function openShortcutGuideModal() {
+    const modal = document.getElementById('shortcut-guide-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        lucide.createIcons();
+    }
+}
+
+function closeShortcutGuideModal() {
+    const modal = document.getElementById('shortcut-guide-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+}
+
 // Initialize on DOM ready
 document.addEventListener("DOMContentLoaded", async () => {
+    // Check PWA installation state
+    checkPwaInstallState();
+
     // Check saved auth
     const token = getAuthToken();
     const savedUser = localStorage.getItem("fitchallenge_user");
