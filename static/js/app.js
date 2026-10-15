@@ -33,11 +33,14 @@ function clearAuthSession() {
 function updateUserProfileUI() {
     const profileWidget = document.getElementById("user-profile-widget");
     const profileName = document.getElementById("user-profile-name");
+    const loginBtn = document.getElementById("header-login-btn");
     if (currentUser) {
         if (profileWidget) profileWidget.classList.remove("hidden");
         if (profileName) profileName.textContent = currentUser.name || currentUser.username;
+        if (loginBtn) loginBtn.classList.add("hidden");
     } else {
         if (profileWidget) profileWidget.classList.add("hidden");
+        if (loginBtn) loginBtn.classList.remove("hidden");
     }
 }
 
@@ -46,9 +49,11 @@ function showAuthModal(show = true) {
     if (!modal) return;
     if (show) {
         modal.classList.remove("hidden");
+        modal.style.display = "flex";
         setAuthTab(currentAuthTab);
     } else {
         modal.classList.add("hidden");
+        modal.style.display = "none";
     }
 }
 

@@ -14,7 +14,9 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/static/sw.js').catch(err => console.log('SW registration failed:', err));
+                navigator.serviceWorker.register('/static/sw.js?v=2.2').then(reg => {
+                    reg.update();
+                }).catch(err => console.log('SW registration failed:', err));
             });
         }
     </script>
@@ -54,7 +56,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.2">
 </head>
 <body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
 
@@ -112,6 +114,11 @@
                         <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
                     </button>
                 </div>
+                <!-- Login Button (when unauthenticated) -->
+                <button id="header-login-btn" onclick="showAuthModal(true)" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition">
+                    <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
+                    <span>Entrar</span>
+                </button>
             </div>
         </div>
     </header>
@@ -610,8 +617,10 @@
                 </button>
             </div>
         </div>
+    </div>
+
     <!-- AUTH MODAL (LOGIN & REGISTER) -->
-    <div id="auth-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden flex items-center justify-center p-4">
+    <div id="auth-modal" style="display: none;" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
         <div class="bg-[#0f172a] border border-slate-800 rounded-3xl w-full max-w-sm p-6 sm:p-7 shadow-2xl space-y-5 animate-scale-up">
             
             <!-- Modal Header with App Branding -->
@@ -695,6 +704,6 @@
     </div>
 
     <!-- Application Script -->
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=2.2"></script>
 </body>
 </html>
