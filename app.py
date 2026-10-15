@@ -1,10 +1,59 @@
 import os
+import re
+import time
+from collections import defaultdict
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify
 import models
 import seed_data
 
 app = Flask(__name__)
+# Restrict request payload size to 1MB to prevent memory exhaustion / DoS
+app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024
+
+# Security: In-memory rate limiting trackers (IP -> list of timestamps)
+_login_failures = defaultdict(list)
+_register_attempts = defaultdict(list)
+_general_requests = defaultdict(list)
+
+def get_client_ip():
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "127.0.0.1"
+
+def is_rate_limited(ip, tracker, limit, window_seconds):
+    now = time.time()
+    timestamps = tracker.get(ip, [])
+    valid_ts = [ts for ts in timestamps if now - ts < window_seconds]
+    tracker[ip] = valid_ts
+    return len(valid_ts) >= limit
+
+def record_attempt(ip, tracker):
+    if ip not in tracker:
+        tracker[ip] = []
+    tracker[ip].append(time.time())
+
+def clear_failures(ip, tracker):
+    if ip in tracker:
+        del tracker[ip]
+
+DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+def validate_date(date_str):
+    if not date_str or not isinstance(date_str, str) or not DATE_REGEX.match(date_str.strip()):
+        return None
+    try:
+        datetime.strptime(date_str.strip(), "%Y-%m-%d")
+        return date_str.strip()
+    except ValueError:
+        return None
+
+def sanitize_str(val, max_len=80, default=""):
+    if not val or not isinstance(val, str):
+        return default
+    cleaned = "".join(ch for ch in val if ch.isprintable()).strip()
+    return cleaned[:max_len]
 
 # Predefined popular exercises for quick selection & autocomplete
 DEFAULT_EXERCISES = [
@@ -50,6 +99,71 @@ with app.app_context():
     except Exception as e:
         print("Migration notice:", e)
 
+BLOCKED_PATH_PATTERNS = [
+    r"\.\.",                                                 # Path traversal
+    r"\.(git|env|db|sqlite|py|sh|yaml|yml|bak|log|ini|cfg)$", # Forbidden file extensions
+    r"^/(\.env|\.git|proc|sys|etc|database\.db)",             # Sensitive roots
+]
+
+@app.before_request
+def security_shield():
+    path = request.path.lower()
+    raw_query = request.query_string.decode("utf-8", errors="ignore").lower()
+
+    for pattern in BLOCKED_PATH_PATTERNS:
+        if re.search(pattern, path) or re.search(pattern, raw_query):
+            return jsonify({"error": "Acceso denegado. Recurso no permitido."}), 403
+
+    # Prevent general DoS abuse (max 150 requests per minute per IP, skip in tests)
+    if not app.config.get("TESTING", False):
+        ip = get_client_ip()
+        if is_rate_limited(ip, _general_requests, limit=150, window_seconds=60):
+            return jsonify({"error": "Demasiadas solicitudes. Por favor espera un momento."}), 429
+        record_attempt(ip, _general_requests)
+
+@app.after_request
+def add_security_headers(response):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://accounts.google.com https://unpkg.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self' https://accounts.google.com; "
+        "frame-src https://accounts.google.com; "
+        "object-src 'none'; "
+        "base-uri 'self';"
+    )
+    response.headers["Server"] = "FitChallenge-Protegido"
+    return response
+
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    return jsonify({"error": "La solicitud enviada es demasiado grande (máximo 1MB)"}), 413
+
+@app.errorhandler(403)
+def forbidden(e):
+    return jsonify({"error": "Acceso denegado"}), 403
+
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Recurso no encontrado"}), 404
+    return render_template("index.html", google_client_id=os.environ.get("GOOGLE_CLIENT_ID", "")), 200
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    return jsonify({"error": "Error interno del servidor. Tu información está protegida."}), 500
+
 def get_auth_token():
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
@@ -73,29 +187,27 @@ def index():
     google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
     return render_template("index.html", google_client_id=google_client_id)
 
-@app.after_request
-def add_header(response):
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
-
 # ==========================================
 # AUTHENTICATION ENDPOINTS
 # ==========================================
 
 @app.route("/api/auth/register", methods=["POST"])
 def auth_register():
-    data = request.get_json() or {}
-    username = data.get("username", "")
-    password = data.get("password", "")
-    name = data.get("name", "")
-    email = data.get("email", "")
+    ip = get_client_ip()
+    if not app.config.get("TESTING", False) and is_rate_limited(ip, _register_attempts, limit=5, window_seconds=600):
+        return jsonify({"error": "Demasiados registros desde tu dirección. Espera 10 minutos."}), 429
+
+    data = request.get_json(silent=True) or {}
+    username = sanitize_str(data.get("username", ""), max_len=50)
+    password = str(data.get("password", "")).strip()
+    name = sanitize_str(data.get("name", ""), max_len=60)
+    email = sanitize_str(data.get("email", ""), max_len=120)
 
     user, err = models.create_user(username, password, name=name, email=email)
     if err:
         return jsonify({"error": err}), 400
 
+    record_attempt(ip, _register_attempts)
     token = models.create_session(user["id"])
     return jsonify({
         "status": "ok",
@@ -106,14 +218,20 @@ def auth_register():
 
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
-    data = request.get_json() or {}
-    username = data.get("username", "") # accepts username or email
-    password = data.get("password", "")
+    ip = get_client_ip()
+    if not app.config.get("TESTING", False) and is_rate_limited(ip, _login_failures, limit=5, window_seconds=300):
+        return jsonify({"error": "Demasiados intentos fallidos. Por seguridad, espera 5 minutos."}), 429
+
+    data = request.get_json(silent=True) or {}
+    username = sanitize_str(data.get("username", ""), max_len=120)
+    password = str(data.get("password", "")).strip()
 
     user, err = models.authenticate_user(username, password)
     if err:
+        record_attempt(ip, _login_failures)
         return jsonify({"error": err}), 401
 
+    clear_failures(ip, _login_failures)
     token = models.create_session(user["id"])
     return jsonify({
         "status": "ok",
@@ -212,7 +330,7 @@ def get_workout():
     user, err = require_auth()
     if err:
         return err
-    date_str = request.args.get("date")
+    date_str = validate_date(request.args.get("date"))
     if not date_str:
         date_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -241,13 +359,13 @@ def save_workout_meta():
     user, err = require_auth()
     if err:
         return err
-    data = request.get_json() or {}
-    date_str = data.get("date")
-    title = data.get("title", "").strip()
-    notes = data.get("notes", "").strip()
-
+    data = request.get_json(silent=True) or {}
+    date_str = validate_date(data.get("date"))
     if not date_str:
-        return jsonify({"error": "Fecha requerida"}), 400
+        return jsonify({"error": "Fecha requerida (formato YYYY-MM-DD)"}), 400
+
+    title = sanitize_str(data.get("title", ""), max_len=100)
+    notes = sanitize_str(data.get("notes", ""), max_len=500)
 
     with models.get_db() as conn:
         cur = conn.cursor()
@@ -268,17 +386,20 @@ def add_exercise():
     user, err = require_auth()
     if err:
         return err
-    data = request.get_json() or {}
-    date_str = data.get("date")
-    exercise_name = data.get("exercise_name", "").strip()
-    muscle_group = data.get("muscle_group", "General").strip()
-    notes = data.get("notes", "").strip()
+    data = request.get_json(silent=True) or {}
+    date_str = validate_date(data.get("date"))
+    if not date_str:
+        return jsonify({"error": "Fecha requerida (formato YYYY-MM-DD)"}), 400
+
+    exercise_name = sanitize_str(data.get("exercise_name", ""), max_len=80)
+    muscle_group = sanitize_str(data.get("muscle_group", "General"), max_len=40, default="General")
+    notes = sanitize_str(data.get("notes", ""), max_len=500, default="")
     sets = data.get("sets", [])
 
-    if not date_str or not exercise_name:
-        return jsonify({"error": "Fecha y nombre de ejercicio son requeridos"}), 400
+    if not exercise_name:
+        return jsonify({"error": "Nombre de ejercicio requerido"}), 400
 
-    if not sets or len(sets) == 0:
+    if not isinstance(sets, list) or len(sets) == 0:
         return jsonify({"error": "Debes agregar al menos una serie"}), 400
 
     with models.get_db() as conn:
@@ -300,11 +421,18 @@ def add_exercise():
         """, (workout_id, exercise_name, muscle_group, notes))
         exercise_log_id = cur.lastrowid
 
-        # Insert sets
-        for idx, s in enumerate(sets, start=1):
-            reps = int(s.get("reps", 0))
-            weight = float(s.get("weight", 0) or 0)
-            rpe = s.get("rpe")
+        # Insert bounded sets (max 50 sets to prevent abuse)
+        for idx, s in enumerate(sets[:50], start=1):
+            try:
+                reps = max(1, min(int(s.get("reps", 0)), 500))
+                weight = max(0.0, min(float(s.get("weight", 0) or 0), 1000.0))
+                rpe_raw = s.get("rpe")
+                rpe = max(1.0, min(float(rpe_raw), 10.0)) if rpe_raw is not None and str(rpe_raw).strip() != "" else None
+            except (ValueError, TypeError):
+                reps = 10
+                weight = 0.0
+                rpe = None
+
             cur.execute("""
                 INSERT INTO set_logs (exercise_log_id, set_number, reps, weight, rpe)
                 VALUES (?, ?, ?, ?, ?)
@@ -349,8 +477,8 @@ def get_last_exercise_occurrence():
     user, err = require_auth()
     if err:
         return err
-    exercise_name = request.args.get("name", "").strip()
-    before_date = request.args.get("before_date")
+    exercise_name = sanitize_str(request.args.get("name", ""), max_len=80)
+    before_date = validate_date(request.args.get("before_date"))
     if not exercise_name:
         return jsonify({"last_session": None})
 
@@ -362,7 +490,7 @@ def get_exercise_history():
     user, err = require_auth()
     if err:
         return err
-    name = request.args.get("name", "").strip()
+    name = sanitize_str(request.args.get("name", ""), max_len=80)
     if not name:
         return jsonify({"history": []})
     history = models.get_exercise_all_history(name, user["id"])
@@ -373,9 +501,9 @@ def update_exercise_muscle_group():
     user, err = require_auth()
     if err:
         return err
-    data = request.get_json() or {}
-    exercise_name = data.get("exercise_name", "").strip()
-    new_muscle = data.get("muscle_group", "Piernas").strip()
+    data = request.get_json(silent=True) or {}
+    exercise_name = sanitize_str(data.get("exercise_name", ""), max_len=80)
+    new_muscle = sanitize_str(data.get("muscle_group", "Piernas"), max_len=40, default="Piernas")
     if not exercise_name:
         return jsonify({"error": "Nombre de ejercicio requerido"}), 400
     with models.get_db() as conn:
@@ -393,8 +521,8 @@ def delete_exercise_by_name():
     user, err = require_auth()
     if err:
         return err
-    data = request.get_json() or {}
-    exercise_name = data.get("exercise_name", "").strip()
+    data = request.get_json(silent=True) or {}
+    exercise_name = sanitize_str(data.get("exercise_name", ""), max_len=80)
     if not exercise_name:
         return jsonify({"error": "Nombre de ejercicio requerido"}), 400
     with models.get_db() as conn:
@@ -411,7 +539,7 @@ def get_weekly():
     user, err = require_auth()
     if err:
         return err
-    date_str = request.args.get("date")
+    date_str = validate_date(request.args.get("date"))
     if not date_str:
         date_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -438,5 +566,5 @@ def reset():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"Iniciando servicio de entrenamiento en http://localhost:{port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    print(f"Iniciando servicio de entrenamiento seguro en http://localhost:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False)

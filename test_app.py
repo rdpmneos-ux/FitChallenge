@@ -251,5 +251,55 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         self.assertIsNone(err2)
         self.assertEqual(user2["id"], user["id"])
 
+    def test_security_headers(self):
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(res.headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertIn("max-age=31536000", res.headers.get("Strict-Transport-Security", ""))
+        self.assertIn("default-src 'self'", res.headers.get("Content-Security-Policy", ""))
+        self.assertEqual(res.headers.get("Server"), "FitChallenge-Protegido")
+
+    def test_path_traversal_and_sensitive_files_blocked(self):
+        # Attempting to access database.db directly
+        res_db = self.client.get("/database.db")
+        self.assertEqual(res_db.status_code, 403)
+
+        # Attempting to access .env
+        res_env = self.client.get("/.env")
+        self.assertEqual(res_env.status_code, 403)
+
+        # Attempting directory traversal
+        res_trav = self.client.get("/static/../models.py")
+        self.assertEqual(res_trav.status_code, 403)
+
+    def test_invalid_date_and_input_sanitization(self):
+        token, user = self.register_and_get_token("secureuser", "clave123", "Secure User")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Invalid date format
+        res_bad_date = self.client.post("/api/workout", json={
+            "date": "2026-99-99",
+            "title": "Bad Date Workout"
+        }, headers=headers)
+        self.assertEqual(res_bad_date.status_code, 400)
+
+        # SQL injection attempt in date
+        res_inj = self.client.post("/api/workout", json={
+            "date": "2026-10-01'; DROP TABLE users;--",
+            "title": "Injection attempt"
+        }, headers=headers)
+        self.assertEqual(res_inj.status_code, 400)
+
+    def test_rate_limiter_logic(self):
+        tracker = {}
+        ip = "192.168.1.100"
+        tracker[ip] = []
+        for _ in range(5):
+            app.record_attempt(ip, tracker)
+        self.assertTrue(app.is_rate_limited(ip, tracker, limit=5, window_seconds=300))
+        app.clear_failures(ip, tracker)
+        self.assertFalse(app.is_rate_limited(ip, tracker, limit=5, window_seconds=300))
+
 if __name__ == "__main__":
     unittest.main()

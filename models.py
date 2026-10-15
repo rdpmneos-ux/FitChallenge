@@ -70,9 +70,10 @@ def init_db(db_path=None):
                 cur.execute("SELECT id FROM users LIMIT 1")
                 default_user = cur.fetchone()
                 if not default_user:
+                    secure_pwd = secrets.token_urlsafe(32)
                     cur.execute(
                         "INSERT INTO users (username, password_hash, name) VALUES (?, ?, ?)",
-                        ("admin", generate_password_hash("admin123"), "Administrador")
+                        ("admin", generate_password_hash(secure_pwd), "Administrador")
                     )
                     default_user_id = cur.lastrowid
                 else:
@@ -123,9 +124,20 @@ def init_db(db_path=None):
         CREATE INDEX IF NOT EXISTS idx_exercise_workout ON exercise_logs(workout_id);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
         """)
+
+        # Security cleanup: Remove any legacy admin account with insecure default password
+        try:
+            cur.execute("SELECT id, password_hash FROM users WHERE username = 'admin'")
+            admin_row = cur.fetchone()
+            if admin_row and check_password_hash(admin_row["password_hash"], "admin123"):
+                cur.execute("DELETE FROM users WHERE id = ?", (admin_row["id"],))
+        except Exception:
+            pass
+
         conn.commit()
 
 def create_user(username, password, name=None, email=None, db_path=None):
+    import re
     if db_path is None:
         db_path = DB_PATH
     username = (username or "").strip().lower()
@@ -135,10 +147,21 @@ def create_user(username, password, name=None, email=None, db_path=None):
 
     if not username or len(username) < 5:
         return None, "El nombre de usuario debe tener al menos 5 letras o caracteres"
+    if len(username) > 50:
+        return None, "El nombre de usuario no puede exceder 50 caracteres"
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
+        return None, "El nombre de usuario solo puede contener letras, números, puntos o guiones"
     if not password or len(password) < 4:
         return None, "La contraseña debe tener al menos 4 caracteres"
-    if email and ("@" not in email or "." not in email):
-        return None, "El correo electrónico ingresado no es válido"
+    if len(password) > 128:
+        return None, "La contraseña no puede exceder 128 caracteres"
+    if len(name) > 60:
+        name = name[:60]
+    if email:
+        if len(email) > 120 or "@" not in email or "." not in email:
+            return None, "El correo electrónico ingresado no es válido"
+        if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+            return None, "El formato del correo electrónico no es válido"
 
     pwd_hash = generate_password_hash(password)
     with get_db(db_path) as conn:
@@ -167,6 +190,8 @@ def authenticate_user(username_or_email, password, db_path=None):
     password = (password or "").strip()
     if not ident or not password:
         return None, "Usuario/correo y contraseña requeridos"
+    if len(ident) > 120 or len(password) > 128:
+        return None, "Usuario o contraseña incorrectos"
 
     with get_db(db_path) as conn:
         cur = conn.cursor()
