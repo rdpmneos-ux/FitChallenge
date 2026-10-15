@@ -1,9 +1,9 @@
 // Simple service worker for PWA installation
-const CACHE_NAME = 'fitchallenge-v9';
+const CACHE_NAME = 'fitchallenge-v10';
 const ASSETS_TO_CACHE = [
   '/',
-  '/static/css/style.css?v=2.2',
-  '/static/js/app.js?v=2.2',
+  '/static/css/style.css?v=2.3',
+  '/static/js/app.js?v=2.3',
   '/static/manifest.json',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png'

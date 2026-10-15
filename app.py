@@ -70,7 +70,8 @@ def require_auth():
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+    return render_template("index.html", google_client_id=google_client_id)
 
 @app.after_request
 def add_header(response):
@@ -89,8 +90,9 @@ def auth_register():
     username = data.get("username", "")
     password = data.get("password", "")
     name = data.get("name", "")
+    email = data.get("email", "")
 
-    user, err = models.create_user(username, password, name)
+    user, err = models.create_user(username, password, name=name, email=email)
     if err:
         return jsonify({"error": err}), 400
 
@@ -105,7 +107,7 @@ def auth_register():
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
     data = request.get_json() or {}
-    username = data.get("username", "")
+    username = data.get("username", "") # accepts username or email
     password = data.get("password", "")
 
     user, err = models.authenticate_user(username, password)
@@ -116,6 +118,41 @@ def auth_login():
     return jsonify({
         "status": "ok",
         "message": f"¡Hola de nuevo, {user['name']}!",
+        "token": token,
+        "user": user
+    })
+
+@app.route("/api/auth/google", methods=["POST"])
+def auth_google():
+    import urllib.request
+    import json
+    data = request.get_json() or {}
+    credential = data.get("credential", "").strip()
+    if not credential:
+        return jsonify({"error": "Credencial de Google no recibida"}), 400
+
+    try:
+        verify_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={credential}"
+        req = urllib.request.Request(verify_url, headers={"User-Agent": "FitChallenge-App"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            google_info = json.loads(resp.read().decode())
+    except Exception as e:
+        print("Google token verification failed:", e)
+        return jsonify({"error": "No se pudo verificar la cuenta de Google con los servidores de Google"}), 400
+
+    email = google_info.get("email")
+    name = google_info.get("name") or google_info.get("given_name")
+    if not email:
+        return jsonify({"error": "No se obtuvo un correo válido de Google"}), 400
+
+    user, err = models.find_or_create_google_user(email, name=name)
+    if err:
+        return jsonify({"error": err}), 400
+
+    token = models.create_session(user["id"])
+    return jsonify({
+        "status": "ok",
+        "message": f"¡Bienvenido, {user['name']}!",
         "token": token,
         "user": user
     })

@@ -24,6 +24,7 @@ def init_db(db_path=None):
             username TEXT NOT NULL UNIQUE COLLATE NOCASE,
             password_hash TEXT NOT NULL,
             name TEXT,
+            email TEXT UNIQUE COLLATE NOCASE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -36,8 +37,15 @@ def init_db(db_path=None):
         );
         """)
 
-        # Check workouts table
+        # Migration check: check if users table lacks email
         cur = conn.cursor()
+        cur.execute("PRAGMA table_info(users)")
+        u_columns = [row[1] for row in cur.fetchall()]
+        if "email" not in u_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+
+        # Check workouts table
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='workouts'")
         workouts_exists = cur.fetchone() is not None
 
@@ -117,17 +125,20 @@ def init_db(db_path=None):
         """)
         conn.commit()
 
-def create_user(username, password, name=None, db_path=None):
+def create_user(username, password, name=None, email=None, db_path=None):
     if db_path is None:
         db_path = DB_PATH
     username = (username or "").strip().lower()
     name = (name or "").strip() or username
     password = (password or "").strip()
+    email = (email or "").strip().lower() or None
 
-    if not username or len(username) < 3:
-        return None, "El usuario debe tener al menos 3 caracteres"
+    if not username or len(username) < 5:
+        return None, "El nombre de usuario debe tener al menos 5 letras o caracteres"
     if not password or len(password) < 4:
         return None, "La contraseña debe tener al menos 4 caracteres"
+    if email and ("@" not in email or "." not in email):
+        return None, "El correo electrónico ingresado no es válido"
 
     pwd_hash = generate_password_hash(password)
     with get_db(db_path) as conn:
@@ -136,32 +147,81 @@ def create_user(username, password, name=None, db_path=None):
         if cur.fetchone():
             return None, "El nombre de usuario ya está registrado. Elige otro o inicia sesión."
         
+        if email:
+            cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+            if cur.fetchone():
+                return None, "Ese correo ya está registrado con otra cuenta. Inicia sesión directamente."
+
         cur.execute(
-            "INSERT INTO users (username, password_hash, name) VALUES (?, ?, ?)",
-            (username, pwd_hash, name)
+            "INSERT INTO users (username, password_hash, name, email) VALUES (?, ?, ?, ?)",
+            (username, pwd_hash, name, email)
         )
         user_id = cur.lastrowid
         conn.commit()
-        return {"id": user_id, "username": username, "name": name}, None
+        return {"id": user_id, "username": username, "name": name, "email": email}, None
 
-def authenticate_user(username, password, db_path=None):
+def authenticate_user(username_or_email, password, db_path=None):
     if db_path is None:
         db_path = DB_PATH
-    username = (username or "").strip().lower()
+    ident = (username_or_email or "").strip().lower()
     password = (password or "").strip()
-    if not username or not password:
-        return None, "Usuario y contraseña requeridos"
+    if not ident or not password:
+        return None, "Usuario/correo y contraseña requeridos"
 
     with get_db(db_path) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE username = ?", (username,))
+        cur.execute("SELECT * FROM users WHERE username = ? OR email = ?", (ident, ident))
         row = cur.fetchone()
         if not row:
             return None, "Usuario o contraseña incorrectos"
         if not check_password_hash(row["password_hash"], password):
             return None, "Usuario o contraseña incorrectos"
 
-        return {"id": row["id"], "username": row["username"], "name": row["name"]}, None
+        return {"id": row["id"], "username": row["username"], "name": row["name"], "email": row["email"]}, None
+
+def find_or_create_google_user(email, name=None, db_path=None):
+    """Finds an existing user by email or creates a new one for Google Sign-In."""
+    import re
+    if db_path is None:
+        db_path = DB_PATH
+    email = (email or "").strip().lower()
+    if not email or "@" not in email:
+        return None, "Correo de Google inválido"
+    
+    name = (name or "").strip() or email.split("@")[0]
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        # 1. Existing user by email
+        cur.execute("SELECT * FROM users WHERE email = ?", (email,))
+        row = cur.fetchone()
+        if row:
+            return {"id": row["id"], "username": row["username"], "name": row["name"], "email": row["email"]}, None
+
+        # 2. Derive unique username with at least 5 chars
+        base_username = email.split("@")[0].lower()
+        base_username = re.sub(r'[^a-z0-9_]', '', base_username)
+        if len(base_username) < 5:
+            base_username = base_username.ljust(5, '0')
+        
+        candidate_username = base_username
+        counter = 1
+        while True:
+            cur.execute("SELECT id FROM users WHERE username = ?", (candidate_username,))
+            if not cur.fetchone():
+                break
+            candidate_username = f"{base_username[:10]}_{counter}"
+            counter += 1
+
+        random_pwd = secrets.token_urlsafe(24)
+        pwd_hash = generate_password_hash(random_pwd)
+
+        cur.execute(
+            "INSERT INTO users (username, password_hash, name, email) VALUES (?, ?, ?, ?)",
+            (candidate_username, pwd_hash, name, email)
+        )
+        user_id = cur.lastrowid
+        conn.commit()
+        return {"id": user_id, "username": candidate_username, "name": name, "email": email}, None
 
 def create_session(user_id, db_path=None):
     if db_path is None:
@@ -185,7 +245,7 @@ def get_user_by_token(token, db_path=None):
     with get_db(db_path) as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT u.id, u.username, u.name, s.expires_at
+            SELECT u.id, u.username, u.name, u.email, s.expires_at
             FROM user_sessions s
             JOIN users u ON s.user_id = u.id
             WHERE s.token = ?
@@ -206,7 +266,7 @@ def get_user_by_token(token, db_path=None):
             except Exception:
                 pass
 
-        return {"id": row["id"], "username": row["username"], "name": row["name"]}
+        return {"id": row["id"], "username": row["username"], "name": row["name"], "email": row["email"]}
 
 def delete_session(token, db_path=None):
     if not token:

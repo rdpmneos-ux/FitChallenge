@@ -62,6 +62,10 @@ function setAuthTab(tab) {
     const loginTabBtn = document.getElementById("auth-tab-login");
     const regTabBtn = document.getElementById("auth-tab-register");
     const nameContainer = document.getElementById("auth-name-container");
+    const emailContainer = document.getElementById("auth-email-container");
+    const usernameLabel = document.getElementById("auth-username-label");
+    const usernameInput = document.getElementById("auth-username-input");
+    const usernameHint = document.getElementById("auth-username-hint");
     const submitText = document.getElementById("auth-submit-text");
     const errorBox = document.getElementById("auth-error-box");
     if (errorBox) errorBox.classList.add("hidden");
@@ -70,14 +74,75 @@ function setAuthTab(tab) {
         if (loginTabBtn) loginTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
         if (regTabBtn) regTabBtn.className = "flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition";
         if (nameContainer) nameContainer.classList.add("hidden");
+        if (emailContainer) emailContainer.classList.add("hidden");
+        if (usernameHint) usernameHint.classList.add("hidden");
+        if (usernameLabel) usernameLabel.textContent = "Usuario o Gmail";
+        if (usernameInput) {
+            usernameInput.placeholder = "Tu usuario o tu@gmail.com";
+            usernameInput.removeAttribute("minlength");
+        }
         if (submitText) submitText.textContent = "Entrar a mi Gimnasio";
     } else {
         if (regTabBtn) regTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
         if (loginTabBtn) loginTabBtn.className = "flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition";
         if (nameContainer) nameContainer.classList.remove("hidden");
+        if (emailContainer) emailContainer.classList.remove("hidden");
+        if (usernameHint) usernameHint.classList.remove("hidden");
+        if (usernameLabel) usernameLabel.textContent = "Nombre de Usuario (mínimo 5 letras)";
+        if (usernameInput) {
+            usernameInput.placeholder = "Elige tu usuario (mínimo 5 letras)";
+            usernameInput.setAttribute("minlength", "5");
+        }
         if (submitText) submitText.textContent = "Crear Mi Cuenta Segura";
     }
     lucide.createIcons();
+}
+
+function quickUseGmail() {
+    setAuthTab('register');
+    const emailInput = document.getElementById("auth-email-input");
+    if (emailInput) {
+        emailInput.focus();
+        emailInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+async function handleGoogleCredentialResponse(response) {
+    const errorBox = document.getElementById("auth-error-box");
+    const errorText = document.getElementById("auth-error-text");
+    if (errorBox) errorBox.classList.add("hidden");
+
+    try {
+        const res = await fetch("/api/auth/google", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ credential: response.credential })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            if (errorBox && errorText) {
+                errorText.textContent = data.error || "Error al autenticar con Google";
+                errorBox.classList.remove("hidden");
+            }
+            return;
+        }
+
+        // Success!
+        setAuthSession(data.token, data.user);
+        showAuthModal(false);
+        showToast(data.message || `¡Bienvenido, ${data.user.name || data.user.username}!`);
+
+        // Load user data
+        await fetchPopularExercises();
+        await loadWorkoutForDate(currentDate);
+        renderWeekStrip();
+    } catch (err) {
+        console.error("Google sign in error:", err);
+        if (errorBox && errorText) {
+            errorText.textContent = "No se pudo conectar con el servidor para iniciar sesión con Google";
+            errorBox.classList.remove("hidden");
+        }
+    }
 }
 
 function togglePasswordVisibility() {
@@ -102,16 +167,27 @@ async function handleAuthSubmit(e) {
     const usernameInput = document.getElementById("auth-username-input");
     const passwordInput = document.getElementById("auth-password-input");
     const nameInput = document.getElementById("auth-name-input");
+    const emailInput = document.getElementById("auth-email-input");
 
     const username = usernameInput ? usernameInput.value.trim() : "";
     const password = passwordInput ? passwordInput.value.trim() : "";
     const name = nameInput ? nameInput.value.trim() : "";
+    const email = emailInput ? emailInput.value.trim() : "";
 
     if (!username || !password) {
         if (errorBox && errorText) {
             errorText.textContent = "Por favor ingresa usuario y contraseña";
             errorBox.classList.remove("hidden");
         }
+        return;
+    }
+
+    if (currentAuthTab === "register" && username.length < 5) {
+        if (errorBox && errorText) {
+            errorText.textContent = "El nombre de usuario debe tener al menos 5 letras o caracteres";
+            errorBox.classList.remove("hidden");
+        }
+        if (usernameInput) usernameInput.focus();
         return;
     }
 
@@ -122,7 +198,9 @@ async function handleAuthSubmit(e) {
 
     try {
         const endpoint = (currentAuthTab === "login") ? "/api/auth/login" : "/api/auth/register";
-        const payload = (currentAuthTab === "login") ? { username, password } : { username, password, name };
+        const payload = (currentAuthTab === "login") 
+            ? { username, password } 
+            : { username, password, name, email };
 
         const res = await fetch(endpoint, {
             method: "POST",

@@ -183,5 +183,73 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         self.assertEqual(week_data["improvements_count"], 1)
         self.assertIn("Progreso", week_data["verdict"])
 
+    def test_username_minimum_length_validation(self):
+        # 4-character username should be rejected
+        res = self.client.post("/api/auth/register", json={
+            "username": "juan",
+            "password": "password123",
+            "name": "Juan Test"
+        })
+        self.assertEqual(res.status_code, 400)
+        data = json.loads(res.data)
+        self.assertIn("5 letras", data["error"])
+
+        # 5-character username should succeed
+        res_ok = self.client.post("/api/auth/register", json={
+            "username": "juanc",
+            "password": "password123",
+            "name": "Juan C"
+        })
+        self.assertEqual(res_ok.status_code, 200)
+
+    def test_gmail_registration_and_login(self):
+        # Register with Gmail
+        res = self.client.post("/api/auth/register", json={
+            "username": "pedrofit",
+            "email": "pedro@gmail.com",
+            "password": "mypassword123",
+            "name": "Pedro Gym"
+        })
+        self.assertEqual(res.status_code, 200)
+        reg_data = json.loads(res.data)
+        self.assertEqual(reg_data["user"]["email"], "pedro@gmail.com")
+
+        # Login using username
+        res_user_login = self.client.post("/api/auth/login", json={
+            "username": "pedrofit",
+            "password": "mypassword123"
+        })
+        self.assertEqual(res_user_login.status_code, 200)
+
+        # Login using Gmail address directly
+        res_email_login = self.client.post("/api/auth/login", json={
+            "username": "pedro@gmail.com",
+            "password": "mypassword123"
+        })
+        self.assertEqual(res_email_login.status_code, 200)
+        email_data = json.loads(res_email_login.data)
+        self.assertEqual(email_data["user"]["username"], "pedrofit")
+
+        # Attempt to register another account with the same Gmail address should fail
+        res_dup_email = self.client.post("/api/auth/register", json={
+            "username": "pedrofit2",
+            "email": "pedro@gmail.com",
+            "password": "anotherpassword"
+        })
+        self.assertEqual(res_dup_email.status_code, 400)
+
+    def test_google_user_creation_helper(self):
+        # Create Google user
+        user, err = models.find_or_create_google_user("atleta@gmail.com", name="Atleta Pro", db_path=self.test_db)
+        self.assertIsNone(err)
+        self.assertIsNotNone(user)
+        self.assertEqual(user["email"], "atleta@gmail.com")
+        self.assertTrue(len(user["username"]) >= 5)
+
+        # Calling again returns same user
+        user2, err2 = models.find_or_create_google_user("atleta@gmail.com", name="Atleta Pro", db_path=self.test_db)
+        self.assertIsNone(err2)
+        self.assertEqual(user2["id"], user["id"])
+
 if __name__ == "__main__":
     unittest.main()
