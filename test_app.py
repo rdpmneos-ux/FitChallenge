@@ -306,11 +306,145 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.headers.get("Content-Type"), "application/vnd.android.package-archive")
         self.assertIn("FitChallenge.apk", res.headers.get("Content-Disposition", ""))
+        res.close()
 
         res2 = self.client.get("/download/apk")
         self.assertEqual(res2.status_code, 200)
+        res2.close()
+
+
+    def test_password_recovery_with_secret_word(self):
+        # Register user with recovery answer
+        res_reg = self.client.post("/api/auth/register", json={
+            "username": "roberto",
+            "password": "oldpassword123",
+            "name": "Roberto",
+            "email": "roberto@gmail.com",
+            "recovery_answer": "mi perro toby"
+        })
+        self.assertEqual(res_reg.status_code, 200)
+
+        # Lookup user
+        res_lookup = self.client.post("/api/auth/recover/lookup", json={
+            "identifier": "roberto"
+        })
+        self.assertEqual(res_lookup.status_code, 200)
+        lookup_data = json.loads(res_lookup.data)
+        self.assertTrue(lookup_data["user"]["has_recovery_question"])
+        self.assertTrue(lookup_data["user"]["has_email"])
+
+        # Reset with wrong secret word
+        res_wrong = self.client.post("/api/auth/recover/reset", json={
+            "identifier": "roberto",
+            "verification_type": "secret_word",
+            "verification_value": "palabra incorrecta",
+            "new_password": "newpassword123"
+        })
+        self.assertEqual(res_wrong.status_code, 400)
+
+        # Reset with correct secret word (case-insensitive test)
+        res_reset = self.client.post("/api/auth/recover/reset", json={
+            "identifier": "roberto",
+            "verification_type": "secret_word",
+            "verification_value": "Mi Perro TOBY",
+            "new_password": "newpassword123"
+        })
+        self.assertEqual(res_reset.status_code, 200)
+        reset_data = json.loads(res_reset.data)
+        self.assertIn("token", reset_data)
+
+        # Old password should no longer work
+        res_old = self.client.post("/api/auth/login", json={
+            "username": "roberto",
+            "password": "oldpassword123"
+        })
+        self.assertEqual(res_old.status_code, 401)
+
+        # New password works
+        res_new = self.client.post("/api/auth/login", json={
+            "username": "roberto",
+            "password": "newpassword123"
+        })
+        self.assertEqual(res_new.status_code, 200)
+
+    def test_password_recovery_with_email_match(self):
+        # Register user with email but no secret word
+        res_reg = self.client.post("/api/auth/register", json={
+            "username": "mariana",
+            "password": "marianaold123",
+            "name": "Mariana",
+            "email": "mariana@gmail.com"
+        })
+        self.assertEqual(res_reg.status_code, 200)
+
+        # Reset with wrong email confirmation
+        res_wrong = self.client.post("/api/auth/recover/reset", json={
+            "identifier": "mariana",
+            "verification_type": "email_match",
+            "verification_value": "otro@gmail.com",
+            "new_password": "mariananew123"
+        })
+        self.assertEqual(res_wrong.status_code, 400)
+
+        # Reset with correct email confirmation
+        res_ok = self.client.post("/api/auth/recover/reset", json={
+            "identifier": "mariana",
+            "verification_type": "email_match",
+            "verification_value": "mariana@gmail.com",
+            "new_password": "mariananew123"
+        })
+        self.assertEqual(res_ok.status_code, 200)
+
+        # Login with new password
+        res_login = self.client.post("/api/auth/login", json={
+            "username": "mariana",
+            "password": "mariananew123"
+        })
+        self.assertEqual(res_login.status_code, 200)
+
+    def test_password_recovery_with_otp_code(self):
+        # Register user
+        res_reg = self.client.post("/api/auth/register", json={
+            "username": "lucasfit",
+            "password": "lucaspwd123",
+            "name": "Lucas",
+            "email": "lucas@gmail.com"
+        })
+        self.assertEqual(res_reg.status_code, 200)
+        user_id = json.loads(res_reg.data)["user"]["id"]
+
+        # Generate reset code
+        code = models.create_password_reset_code(user_id, db_path=self.test_db)
+
+        # Reset with wrong code
+        res_bad_code = self.client.post("/api/auth/recover/reset", json={
+            "identifier": "lucasfit",
+            "verification_type": "otp_code",
+            "verification_value": "000000",
+            "new_password": "lucasnewpwd123"
+        })
+        self.assertEqual(res_bad_code.status_code, 400)
+
+        # Reset with correct code
+        res_good_code = self.client.post("/api/auth/recover/reset", json={
+            "identifier": "lucasfit",
+            "verification_type": "otp_code",
+            "verification_value": code,
+            "new_password": "lucasnewpwd123"
+        })
+        self.assertEqual(res_good_code.status_code, 200)
+
+        # Used code cannot be reused
+        res_reused = self.client.post("/api/auth/recover/reset", json={
+            "identifier": "lucasfit",
+            "verification_type": "otp_code",
+            "verification_value": code,
+            "new_password": "anotherpassword123"
+        })
+        self.assertEqual(res_reused.status_code, 400)
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

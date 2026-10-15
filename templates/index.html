@@ -677,13 +677,16 @@
                 <p class="text-xs text-slate-400">Tus marcas, cargas y progreso están 100% aislados y protegidos para ti.</p>
             </div>
 
-            <!-- Tab Switcher: Iniciar Sesión / Crear Cuenta -->
-            <div class="flex rounded-xl bg-slate-900/90 p-1 border border-slate-800 text-xs font-semibold">
+            <!-- Tab Switcher: Iniciar Sesión / Crear Cuenta / Recuperar -->
+            <div id="auth-tab-bar" class="flex rounded-xl bg-slate-900/90 p-1 border border-slate-800 text-xs font-semibold">
                 <button type="button" onclick="setAuthTab('login')" id="auth-tab-login" class="flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm">
                     Iniciar Sesión
                 </button>
                 <button type="button" onclick="setAuthTab('register')" id="auth-tab-register" class="flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition">
                     Crear Cuenta
+                </button>
+                <button type="button" onclick="setAuthTab('recover')" id="auth-tab-recover" class="hidden flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition">
+                    Recuperar
                 </button>
             </div>
 
@@ -693,7 +696,7 @@
                 <span id="auth-error-text"></span>
             </div>
 
-            <!-- Auth Form -->
+            <!-- Auth Form (Login / Register) -->
             <form id="auth-form" onsubmit="handleAuthSubmit(event)" class="space-y-3">
                 <!-- Name field (only visible for registration) -->
                 <div id="auth-name-container" class="hidden space-y-1">
@@ -738,6 +741,26 @@
                     </div>
                 </div>
 
+                <!-- Forgot Password Link (only in Login mode) -->
+                <div id="auth-forgot-password-link" class="flex justify-end pt-0.5">
+                    <button type="button" onclick="setAuthTab('recover')" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold transition hover:underline">
+                        ¿Olvidaste tu contraseña?
+                    </button>
+                </div>
+
+                <!-- Secret Recovery Word (only visible for registration) -->
+                <div id="auth-recovery-container" class="hidden space-y-1">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Palabra Secreta de Recuperación</span>
+                        <span class="text-[9px] text-emerald-400 font-medium">Por si olvidas tu clave</span>
+                    </label>
+                    <div class="relative">
+                        <i data-lucide="help-circle" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="auth-recovery-input" placeholder="Ej: Toby mi perro, o mi apodo favorito" class="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                    </div>
+                    <span class="text-[9px] text-slate-500 pl-1 block">Te permitirá restablecer tu contraseña al instante si la olvidas.</span>
+                </div>
+
                 <!-- Submit Button -->
                 <button type="submit" id="auth-submit-btn" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 hover:opacity-95 transition flex items-center justify-center gap-2 mt-2">
                     <span id="auth-submit-text">Entrar a mi Gimnasio</span>
@@ -745,8 +768,94 @@
                 </button>
             </form>
 
+            <!-- RECOVERY SECTION (2-step recovery) -->
+            <div id="auth-recover-section" class="hidden space-y-3.5">
+                <div class="flex items-center justify-between pb-1 border-b border-slate-800">
+                    <button type="button" onclick="setAuthTab('login')" class="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition">
+                        <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+                        <span>Volver a Iniciar Sesión</span>
+                    </button>
+                    <span class="text-[10px] font-black text-emerald-400 uppercase tracking-wider">Recuperación</span>
+                </div>
+
+                <!-- Step 1: Identify Account -->
+                <form id="recover-lookup-form" onsubmit="handleRecoverLookup(event)" class="space-y-3">
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tu Usuario o Correo Registrado</label>
+                        <div class="relative">
+                            <i data-lucide="user" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                            <input type="text" id="recover-ident-input" required placeholder="Escribe tu usuario o correo" class="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                        </div>
+                        <span class="text-[10px] text-slate-500 pl-1 block">Buscaremos los métodos de recuperación disponibles para tu cuenta.</span>
+                    </div>
+
+                    <button type="submit" id="recover-lookup-btn" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 hover:opacity-95 transition flex items-center justify-center gap-2">
+                        <span>Buscar Cuenta</span>
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                    </button>
+                </form>
+
+                <!-- Step 2: Verification & New Password -->
+                <form id="recover-reset-form" onsubmit="handleRecoverReset(event)" class="hidden space-y-3">
+                    <div class="p-3 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black text-xs border border-emerald-500/30">
+                                <i data-lucide="user-check" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <div id="recover-account-name" class="font-bold text-xs text-white">Usuario</div>
+                                <div id="recover-account-user" class="text-[11px] text-emerald-400 font-mono">@usuario</div>
+                            </div>
+                        </div>
+                        <button type="button" onclick="resetRecoverStep()" class="text-[10px] text-slate-400 hover:text-slate-200 underline">Cambiar</button>
+                    </div>
+
+                    <!-- Method Selector Tabs -->
+                    <div id="recover-methods-tabs" class="hidden flex rounded-xl bg-slate-900/90 p-1 border border-slate-800 text-[11px] font-semibold">
+                        <button type="button" id="tab-method-secret" onclick="setRecoverMethod('secret_word')" class="flex-1 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold transition">Palabra Secreta</button>
+                        <button type="button" id="tab-method-email" onclick="setRecoverMethod('email_match')" class="flex-1 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Confirmar Correo</button>
+                    </div>
+
+                    <!-- Field: Secret Word -->
+                    <div id="recover-field-secret" class="space-y-1">
+                        <label id="recover-secret-label" class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Palabra Secreta de Recuperación</label>
+                        <div class="relative">
+                            <i data-lucide="key" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                            <input type="text" id="recover-secret-input" placeholder="Tu palabra o clave secreta" class="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                        </div>
+                    </div>
+
+                    <!-- Field: Email Match / OTP -->
+                    <div id="recover-field-email" class="hidden space-y-1">
+                        <label id="recover-email-label" class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Confirmar Correo Registrado o Código</label>
+                        <div class="relative">
+                            <i data-lucide="mail" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                            <input type="text" id="recover-email-input" placeholder="Escribe tu correo completo o código de 6 dígitos" class="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                        </div>
+                        <span id="recover-email-hint" class="text-[10px] text-slate-400 pl-1 block"></span>
+                    </div>
+
+                    <!-- Field: New Password -->
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Nueva Contraseña</label>
+                        <div class="relative">
+                            <i data-lucide="lock" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                            <input type="password" id="recover-new-password" required minlength="4" placeholder="Mínimo 4 caracteres" class="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                            <button type="button" onclick="toggleRecoverPasswordVisibility()" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                                <i id="recover-password-eye" data-lucide="eye" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="recover-reset-btn" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 hover:opacity-95 transition flex items-center justify-center gap-2">
+                        <span id="recover-reset-text">Restablecer e Iniciar Sesión</span>
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                    </button>
+                </form>
+            </div>
+
             <!-- Google Sign-In / Gmail Section -->
-            <div class="pt-2 border-t border-slate-800/80 space-y-2.5">
+            <div id="auth-google-section" class="pt-2 border-t border-slate-800/80 space-y-2.5">
                 <div class="relative flex items-center justify-center my-1">
                     <span class="bg-[#0f172a] px-2 text-[10px] text-slate-500 uppercase font-semibold">O también con Gmail</span>
                 </div>

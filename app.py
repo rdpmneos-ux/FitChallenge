@@ -14,7 +14,52 @@ app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024
 # Security: In-memory rate limiting trackers (IP -> list of timestamps)
 _login_failures = defaultdict(list)
 _register_attempts = defaultdict(list)
+_recovery_attempts = defaultdict(list)
 _general_requests = defaultdict(list)
+
+def send_recovery_email(to_email, reset_code, name="Usuario"):
+    smtp_host = os.environ.get("SMTP_HOST")
+    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    smtp_user = os.environ.get("SMTP_USER")
+    smtp_pass = os.environ.get("SMTP_PASS")
+    sender = os.environ.get("SMTP_FROM", smtp_user or "noreply@fitchallenge.app")
+    
+    if not (smtp_host and smtp_user and smtp_pass):
+        return False, "SMTP no configurado"
+    
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"FitChallenge - Tu código de recuperación: {reset_code}"
+        msg["From"] = f"FitChallenge <{sender}>"
+        msg["To"] = to_email
+        
+        html = f"""
+        <div style="font-family: sans-serif; background-color: #0f172a; color: #f8fafc; padding: 24px; border-radius: 16px; max-width: 480px; margin: 0 auto;">
+            <h2 style="color: #10b981; margin-top: 0;">Recuperación de Contraseña</h2>
+            <p>Hola <strong>{name}</strong>,</p>
+            <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta privada de <strong>FitChallenge</strong>.</p>
+            <p>Tu código de seguridad temporal es:</p>
+            <div style="font-size: 30px; font-weight: bold; letter-spacing: 6px; color: #34d399; margin: 20px 0; padding: 12px 20px; background: #1e293b; display: inline-block; border-radius: 12px; border: 1px solid #059669;">
+                {reset_code}
+            </div>
+            <p style="font-size: 13px; color: #94a3b8;">Este código vence en 15 minutos. Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
+        </div>
+        """
+        msg.attach(MIMEText(html, "html"))
+        
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(sender, [to_email], msg.as_string())
+        return True, None
+    except Exception as e:
+        print("Error sending recovery email:", e)
+        return False, str(e)
+
 
 def get_client_ip():
     forwarded = request.headers.get("X-Forwarded-For", "")
@@ -215,8 +260,17 @@ def auth_register():
     password = str(data.get("password", "")).strip()
     name = sanitize_str(data.get("name", ""), max_len=60)
     email = sanitize_str(data.get("email", ""), max_len=120)
+    recovery_answer = sanitize_str(data.get("recovery_answer", ""), max_len=100)
+    recovery_question = sanitize_str(data.get("recovery_question", ""), max_len=150)
 
-    user, err = models.create_user(username, password, name=name, email=email)
+    user, err = models.create_user(
+        username,
+        password,
+        name=name,
+        email=email,
+        recovery_question=recovery_question,
+        recovery_answer=recovery_answer
+    )
     if err:
         return jsonify({"error": err}), 400
 
@@ -228,6 +282,99 @@ def auth_register():
         "token": token,
         "user": user
     })
+
+@app.route("/api/auth/recover/lookup", methods=["POST"])
+def auth_recover_lookup():
+    ip = get_client_ip()
+    if not app.config.get("TESTING", False) and is_rate_limited(ip, _recovery_attempts, limit=8, window_seconds=600):
+        return jsonify({"error": "Demasiadas solicitudes de recuperación. Espera 10 minutos."}), 429
+
+    data = request.get_json(silent=True) or {}
+    identifier = sanitize_str(data.get("identifier", ""), max_len=120)
+    if not identifier:
+        return jsonify({"error": "Debes ingresar tu usuario o correo electrónico"}), 400
+
+    user_info, err = models.find_user_for_recovery(identifier)
+    if err:
+        record_attempt(ip, _recovery_attempts)
+        return jsonify({"error": err}), 404
+
+    record_attempt(ip, _recovery_attempts)
+
+    # Generate OTP code if user has registered email
+    email_sent = False
+    if user_info.get("has_email") and user_info.get("email"):
+        code = models.create_password_reset_code(user_info["id"])
+        email_sent, _ = send_recovery_email(user_info["email"], code, name=user_info["name"])
+
+    clean_user = {
+        "username": user_info["username"],
+        "name": user_info["name"],
+        "has_email": user_info["has_email"],
+        "masked_email": user_info["masked_email"],
+        "has_recovery_question": user_info["has_recovery_question"],
+        "recovery_question": user_info["recovery_question"]
+    }
+
+    return jsonify({
+        "status": "ok",
+        "user": clean_user,
+        "email_sent": email_sent
+    })
+
+@app.route("/api/auth/recover/reset", methods=["POST"])
+def auth_recover_reset():
+    ip = get_client_ip()
+    if not app.config.get("TESTING", False) and is_rate_limited(ip, _recovery_attempts, limit=8, window_seconds=600):
+        return jsonify({"error": "Demasiados intentos. Espera 10 minutos."}), 429
+
+    data = request.get_json(silent=True) or {}
+    identifier = sanitize_str(data.get("identifier", ""), max_len=120)
+    verification_type = sanitize_str(data.get("verification_type", ""), max_len=30)
+    verification_value = sanitize_str(data.get("verification_value", ""), max_len=120)
+    new_password = str(data.get("new_password", "")).strip()
+
+    if not identifier or not verification_type or not verification_value or not new_password:
+        return jsonify({"error": "Todos los campos de recuperación son obligatorios"}), 400
+
+    user, err = models.verify_and_reset_password(
+        ident=identifier,
+        verification_type=verification_type,
+        verification_value=verification_value,
+        new_password=new_password
+    )
+    if err:
+        record_attempt(ip, _recovery_attempts)
+        return jsonify({"error": err}), 400
+
+    clear_failures(ip, _recovery_attempts)
+    clear_failures(ip, _login_failures)
+    token = models.create_session(user["id"])
+    return jsonify({
+        "status": "ok",
+        "message": "¡Tu contraseña ha sido restablecida exitosamente! Sesión iniciada.",
+        "token": token,
+        "user": user
+    })
+
+@app.route("/api/auth/recovery-secret", methods=["POST"])
+def auth_recovery_secret():
+    user, err_resp = require_auth()
+    if err_resp:
+        return err_resp
+
+    data = request.get_json(silent=True) or {}
+    secret_answer = sanitize_str(data.get("secret_answer", ""), max_len=100)
+    question = sanitize_str(data.get("question", ""), max_len=150)
+    if not secret_answer:
+        return jsonify({"error": "Debes ingresar tu palabra o clave secreta"}), 400
+
+    ok, err = models.set_user_recovery_secret(user["id"], secret_answer, question=question)
+    if not ok:
+        return jsonify({"error": err}), 400
+
+    return jsonify({"status": "ok", "message": "Palabra secreta guardada correctamente."})
+
 
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():

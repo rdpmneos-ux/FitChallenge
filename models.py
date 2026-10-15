@@ -37,13 +37,30 @@ def init_db(db_path=None):
         );
         """)
 
-        # Migration check: check if users table lacks email
+        # Migration check: check if users table lacks email or recovery fields
         cur = conn.cursor()
         cur.execute("PRAGMA table_info(users)")
         u_columns = [row[1] for row in cur.fetchall()]
         if "email" not in u_columns:
             conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+        if "recovery_question" not in u_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN recovery_question TEXT")
+        if "recovery_answer_hash" not in u_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN recovery_answer_hash TEXT")
+
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            reset_code TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            used INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id, reset_code);
+        """)
 
         # Check workouts table
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='workouts'")
@@ -136,7 +153,7 @@ def init_db(db_path=None):
 
         conn.commit()
 
-def create_user(username, password, name=None, email=None, db_path=None):
+def create_user(username, password, name=None, email=None, recovery_question=None, recovery_answer=None, db_path=None):
     import re
     if db_path is None:
         db_path = DB_PATH
@@ -144,6 +161,8 @@ def create_user(username, password, name=None, email=None, db_path=None):
     name = (name or "").strip() or username
     password = (password or "").strip()
     email = (email or "").strip().lower() or None
+    recovery_question = (recovery_question or "").strip() or "¿Cuál es tu palabra o frase secreta de recuperación?"
+    recovery_answer = (recovery_answer or "").strip().lower()
 
     if not username or len(username) < 5:
         return None, "El nombre de usuario debe tener al menos 5 letras o caracteres"
@@ -164,6 +183,8 @@ def create_user(username, password, name=None, email=None, db_path=None):
             return None, "El formato del correo electrónico no es válido"
 
     pwd_hash = generate_password_hash(password)
+    rec_hash = generate_password_hash(recovery_answer) if recovery_answer else None
+
     with get_db(db_path) as conn:
         cur = conn.cursor()
         cur.execute("SELECT id FROM users WHERE username = ?", (username,))
@@ -176,8 +197,8 @@ def create_user(username, password, name=None, email=None, db_path=None):
                 return None, "Ese correo ya está registrado con otra cuenta. Inicia sesión directamente."
 
         cur.execute(
-            "INSERT INTO users (username, password_hash, name, email) VALUES (?, ?, ?, ?)",
-            (username, pwd_hash, name, email)
+            "INSERT INTO users (username, password_hash, name, email, recovery_question, recovery_answer_hash) VALUES (?, ?, ?, ?, ?, ?)",
+            (username, pwd_hash, name, email, recovery_question, rec_hash)
         )
         user_id = cur.lastrowid
         conn.commit()
@@ -301,6 +322,171 @@ def delete_session(token, db_path=None):
     with get_db(db_path) as conn:
         conn.execute("DELETE FROM user_sessions WHERE token = ?", (token,))
         conn.commit()
+
+# ==========================================
+# PASSWORD RECOVERY HELPERS
+# ==========================================
+
+def mask_email(email):
+    if not email or "@" not in email:
+        return ""
+    parts = email.split("@")
+    user_part = parts[0]
+    domain_part = parts[1]
+    if len(user_part) <= 2:
+        masked_user = user_part[0] + "***"
+    else:
+        masked_user = user_part[0] + "***" + user_part[-1]
+    return f"{masked_user}@{domain_part}"
+
+def find_user_for_recovery(username_or_email, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    ident = (username_or_email or "").strip().lower()
+    if not ident:
+        return None, "Debes ingresar tu usuario o correo electrónico"
+
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, username, name, email, recovery_question, recovery_answer_hash
+            FROM users
+            WHERE username = ? OR email = ?
+        """, (ident, ident))
+        row = cur.fetchone()
+        if not row:
+            return None, "No se encontró ninguna cuenta asociada a ese usuario o correo"
+
+        return {
+            "id": row["id"],
+            "username": row["username"],
+            "name": row["name"],
+            "has_email": bool(row["email"]),
+            "email": row["email"],
+            "masked_email": mask_email(row["email"]) if row["email"] else None,
+            "has_recovery_question": bool(row["recovery_answer_hash"]),
+            "recovery_question": row["recovery_question"] or "¿Cuál es tu palabra secreta de recuperación?"
+        }, None
+
+def create_password_reset_code(user_id, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    import random
+    reset_code = f"{random.randint(100000, 999999)}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+    with get_db(db_path) as conn:
+        conn.execute(
+            "INSERT INTO password_resets (user_id, reset_code, expires_at) VALUES (?, ?, ?)",
+            (user_id, reset_code, expires_at.isoformat())
+        )
+        conn.commit()
+    return reset_code
+
+def reset_password(user_id, new_password, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    new_password = (new_password or "").strip()
+    if not new_password or len(new_password) < 4:
+        return False, "La nueva contraseña debe tener al menos 4 caracteres"
+    if len(new_password) > 128:
+        return False, "La nueva contraseña no puede exceder 128 caracteres"
+
+    new_hash = generate_password_hash(new_password)
+    with get_db(db_path) as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user_id))
+        # Clear pending reset codes
+        conn.execute("UPDATE password_resets SET used = 1 WHERE user_id = ?", (user_id,))
+        # Invalidate old sessions for safety
+        conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
+        conn.commit()
+    return True, None
+
+def verify_and_reset_password(ident, verification_type, verification_value, new_password, db_path=None):
+    """
+    verification_type:
+    - 'secret_word': checks recovery_answer_hash
+    - 'email_match': checks that entered email matches stored email
+    - 'otp_code': checks 6-digit code in password_resets table
+    """
+    if db_path is None:
+        db_path = DB_PATH
+    user_info, err = find_user_for_recovery(ident, db_path=db_path)
+    if err:
+        return None, err
+
+    user_id = user_info["id"]
+    val = (verification_value or "").strip()
+    if not val:
+        return None, "Debes ingresar el dato de verificación"
+
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            return None, "Usuario no encontrado"
+
+        if verification_type == "secret_word":
+            if not row["recovery_answer_hash"]:
+                return None, "Esta cuenta no tiene configurada una palabra secreta. Usa la confirmación por correo."
+            if not check_password_hash(row["recovery_answer_hash"], val.lower()):
+                return None, "La palabra secreta no coincide. Intenta de nuevo."
+
+        elif verification_type == "email_match":
+            if not row["email"]:
+                return None, "Esta cuenta no tiene un correo registrado asociado."
+            if val.lower() != row["email"].lower():
+                return None, "El correo electrónico no coincide con el registrado en esta cuenta."
+
+        elif verification_type == "otp_code":
+            cur.execute("""
+                SELECT id, expires_at, used FROM password_resets
+                WHERE user_id = ? AND reset_code = ? AND used = 0
+                ORDER BY id DESC LIMIT 1
+            """, (user_id, val))
+            reset_row = cur.fetchone()
+            if not reset_row:
+                return None, "El código de 6 dígitos es inválido o ya fue utilizado."
+            
+            exp_str = reset_row["expires_at"].replace("Z", "+00:00")
+            exp = datetime.fromisoformat(exp_str)
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > exp:
+                return None, "El código de recuperación ha expirado. Solicita uno nuevo."
+        else:
+            return None, "Tipo de verificación no reconocido"
+
+    ok, reset_err = reset_password(user_id, new_password, db_path=db_path)
+    if not ok:
+        return None, reset_err
+
+    return {
+        "id": user_info["id"],
+        "username": user_info["username"],
+        "name": user_info["name"],
+        "email": user_info["email"]
+    }, None
+
+def set_user_recovery_secret(user_id, secret_answer, question=None, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    secret_answer = (secret_answer or "").strip().lower()
+    if not secret_answer or len(secret_answer) < 2:
+        return False, "La palabra secreta debe tener al menos 2 caracteres"
+    if len(secret_answer) > 100:
+        return False, "La palabra secreta no puede superar 100 caracteres"
+    
+    question = (question or "").strip() or "¿Cuál es tu palabra o frase secreta de recuperación?"
+    answer_hash = generate_password_hash(secret_answer)
+    with get_db(db_path) as conn:
+        conn.execute(
+            "UPDATE users SET recovery_question = ?, recovery_answer_hash = ? WHERE id = ?",
+            (question, answer_hash, user_id)
+        )
+        conn.commit()
+    return True, None
+
 
 def compute_exercise_stats(sets):
     """

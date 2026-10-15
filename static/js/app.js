@@ -57,12 +57,21 @@ function showAuthModal(show = true) {
     }
 }
 
+let activeRecoverAccount = null;
+let activeRecoverMethod = 'secret_word';
+
 function setAuthTab(tab) {
     currentAuthTab = tab;
     const loginTabBtn = document.getElementById("auth-tab-login");
     const regTabBtn = document.getElementById("auth-tab-register");
+    const recoverTabBtn = document.getElementById("auth-tab-recover");
+    const authForm = document.getElementById("auth-form");
+    const googleSection = document.getElementById("auth-google-section");
+    const recoverSection = document.getElementById("auth-recover-section");
     const nameContainer = document.getElementById("auth-name-container");
     const emailContainer = document.getElementById("auth-email-container");
+    const recoveryContainer = document.getElementById("auth-recovery-container");
+    const forgotLink = document.getElementById("auth-forgot-password-link");
     const usernameLabel = document.getElementById("auth-username-label");
     const usernameInput = document.getElementById("auth-username-input");
     const usernameHint = document.getElementById("auth-username-hint");
@@ -70,30 +79,52 @@ function setAuthTab(tab) {
     const errorBox = document.getElementById("auth-error-box");
     if (errorBox) errorBox.classList.add("hidden");
 
-    if (tab === 'login') {
-        if (loginTabBtn) loginTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
-        if (regTabBtn) regTabBtn.className = "flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition";
-        if (nameContainer) nameContainer.classList.add("hidden");
-        if (emailContainer) emailContainer.classList.add("hidden");
-        if (usernameHint) usernameHint.classList.add("hidden");
-        if (usernameLabel) usernameLabel.textContent = "Usuario o Gmail";
-        if (usernameInput) {
-            usernameInput.placeholder = "Tu usuario o tu@gmail.com";
-            usernameInput.removeAttribute("minlength");
-        }
-        if (submitText) submitText.textContent = "Entrar a mi Gimnasio";
-    } else {
-        if (regTabBtn) regTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
+    if (tab === 'recover') {
         if (loginTabBtn) loginTabBtn.className = "flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition";
-        if (nameContainer) nameContainer.classList.remove("hidden");
-        if (emailContainer) emailContainer.classList.remove("hidden");
-        if (usernameHint) usernameHint.classList.remove("hidden");
-        if (usernameLabel) usernameLabel.textContent = "Nombre de Usuario (mínimo 5 letras)";
-        if (usernameInput) {
-            usernameInput.placeholder = "Elige tu usuario (mínimo 5 letras)";
-            usernameInput.setAttribute("minlength", "5");
+        if (regTabBtn) regTabBtn.className = "flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition";
+        if (recoverTabBtn) {
+            recoverTabBtn.classList.remove("hidden");
+            recoverTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
         }
-        if (submitText) submitText.textContent = "Crear Mi Cuenta Segura";
+        if (authForm) authForm.classList.add("hidden");
+        if (googleSection) googleSection.classList.add("hidden");
+        if (recoverSection) recoverSection.classList.remove("hidden");
+        resetRecoverStep();
+    } else {
+        if (recoverTabBtn) recoverTabBtn.classList.add("hidden");
+        if (authForm) authForm.classList.remove("hidden");
+        if (googleSection) googleSection.classList.remove("hidden");
+        if (recoverSection) recoverSection.classList.add("hidden");
+
+        if (tab === 'login') {
+            if (loginTabBtn) loginTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
+            if (regTabBtn) regTabBtn.className = "flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition";
+            if (nameContainer) nameContainer.classList.add("hidden");
+            if (emailContainer) emailContainer.classList.add("hidden");
+            if (recoveryContainer) recoveryContainer.classList.add("hidden");
+            if (forgotLink) forgotLink.classList.remove("hidden");
+            if (usernameHint) usernameHint.classList.add("hidden");
+            if (usernameLabel) usernameLabel.textContent = "Usuario o Gmail";
+            if (usernameInput) {
+                usernameInput.placeholder = "Tu usuario o tu@gmail.com";
+                usernameInput.removeAttribute("minlength");
+            }
+            if (submitText) submitText.textContent = "Entrar a mi Gimnasio";
+        } else {
+            if (regTabBtn) regTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
+            if (loginTabBtn) loginTabBtn.className = "flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition";
+            if (nameContainer) nameContainer.classList.remove("hidden");
+            if (emailContainer) emailContainer.classList.remove("hidden");
+            if (recoveryContainer) recoveryContainer.classList.remove("hidden");
+            if (forgotLink) forgotLink.classList.add("hidden");
+            if (usernameHint) usernameHint.classList.remove("hidden");
+            if (usernameLabel) usernameLabel.textContent = "Nombre de Usuario (mínimo 5 letras)";
+            if (usernameInput) {
+                usernameInput.placeholder = "Elige tu usuario (mínimo 5 letras)";
+                usernameInput.setAttribute("minlength", "5");
+            }
+            if (submitText) submitText.textContent = "Crear Mi Cuenta Segura";
+        }
     }
     lucide.createIcons();
 }
@@ -168,11 +199,13 @@ async function handleAuthSubmit(e) {
     const passwordInput = document.getElementById("auth-password-input");
     const nameInput = document.getElementById("auth-name-input");
     const emailInput = document.getElementById("auth-email-input");
+    const recoveryInput = document.getElementById("auth-recovery-input");
 
     const username = usernameInput ? usernameInput.value.trim() : "";
     const password = passwordInput ? passwordInput.value.trim() : "";
     const name = nameInput ? nameInput.value.trim() : "";
     const email = emailInput ? emailInput.value.trim() : "";
+    const recovery_answer = recoveryInput ? recoveryInput.value.trim() : "";
 
     if (!username || !password) {
         if (errorBox && errorText) {
@@ -200,7 +233,7 @@ async function handleAuthSubmit(e) {
         const endpoint = (currentAuthTab === "login") ? "/api/auth/login" : "/api/auth/register";
         const payload = (currentAuthTab === "login") 
             ? { username, password } 
-            : { username, password, name, email };
+            : { username, password, name, email, recovery_answer };
 
         const res = await fetch(endpoint, {
             method: "POST",
@@ -236,6 +269,257 @@ async function handleAuthSubmit(e) {
         if (submitBtn) {
             submitBtn.disabled = false;
             submitBtn.classList.remove("opacity-60");
+        }
+    }
+}
+
+function resetRecoverStep() {
+    activeRecoverAccount = null;
+    const lookupForm = document.getElementById("recover-lookup-form");
+    const resetForm = document.getElementById("recover-reset-form");
+    const identInput = document.getElementById("recover-ident-input");
+    const secretInput = document.getElementById("recover-secret-input");
+    const emailInput = document.getElementById("recover-email-input");
+    const newPassInput = document.getElementById("recover-new-password");
+    const errorBox = document.getElementById("auth-error-box");
+    if (errorBox) errorBox.classList.add("hidden");
+    if (lookupForm) lookupForm.classList.remove("hidden");
+    if (resetForm) resetForm.classList.add("hidden");
+    if (secretInput) secretInput.value = "";
+    if (emailInput) emailInput.value = "";
+    if (newPassInput) newPassInput.value = "";
+    if (identInput) {
+        identInput.focus();
+    }
+    lucide.createIcons();
+}
+
+function setRecoverMethod(method) {
+    activeRecoverMethod = method;
+    const tabSecret = document.getElementById("tab-method-secret");
+    const tabEmail = document.getElementById("tab-method-email");
+    const fieldSecret = document.getElementById("recover-field-secret");
+    const fieldEmail = document.getElementById("recover-field-email");
+
+    if (method === "secret_word") {
+        if (tabSecret) tabSecret.className = "flex-1 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold transition";
+        if (tabEmail) tabEmail.className = "flex-1 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+        if (fieldSecret) fieldSecret.classList.remove("hidden");
+        if (fieldEmail) fieldEmail.classList.add("hidden");
+    } else {
+        if (tabEmail) tabEmail.className = "flex-1 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold transition";
+        if (tabSecret) tabSecret.className = "flex-1 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+        if (fieldEmail) fieldEmail.classList.remove("hidden");
+        if (fieldSecret) fieldSecret.classList.add("hidden");
+    }
+    lucide.createIcons();
+}
+
+function toggleRecoverPasswordVisibility() {
+    const passInput = document.getElementById("recover-new-password");
+    const eyeIcon = document.getElementById("recover-password-eye");
+    if (!passInput) return;
+    if (passInput.type === "password") {
+        passInput.type = "text";
+        if (eyeIcon) eyeIcon.setAttribute("data-lucide", "eye-off");
+    } else {
+        passInput.type = "password";
+        if (eyeIcon) eyeIcon.setAttribute("data-lucide", "eye");
+    }
+    lucide.createIcons();
+}
+
+async function handleRecoverLookup(e) {
+    e.preventDefault();
+    const errorBox = document.getElementById("auth-error-box");
+    const errorText = document.getElementById("auth-error-text");
+    const identInput = document.getElementById("recover-ident-input");
+    const lookupBtn = document.getElementById("recover-lookup-btn");
+    const ident = identInput ? identInput.value.trim() : "";
+    if (errorBox) errorBox.classList.add("hidden");
+
+    if (!ident) {
+        if (errorBox && errorText) {
+            errorText.textContent = "Por favor ingresa tu usuario o correo";
+            errorBox.classList.remove("hidden");
+        }
+        return;
+    }
+
+    if (lookupBtn) {
+        lookupBtn.disabled = true;
+        lookupBtn.classList.add("opacity-60");
+    }
+
+    try {
+        const res = await fetch("/api/auth/recover/lookup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identifier: ident })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            if (errorBox && errorText) {
+                errorText.textContent = data.error || "No se encontró la cuenta";
+                errorBox.classList.remove("hidden");
+            }
+            return;
+        }
+
+        activeRecoverAccount = data.user;
+        activeRecoverAccount.identifier = ident;
+
+        // Switch to Step 2
+        const lookupForm = document.getElementById("recover-lookup-form");
+        const resetForm = document.getElementById("recover-reset-form");
+        const accName = document.getElementById("recover-account-name");
+        const accUser = document.getElementById("recover-account-user");
+        const methodsTabs = document.getElementById("recover-methods-tabs");
+        const secretLabel = document.getElementById("recover-secret-label");
+        const emailHint = document.getElementById("recover-email-hint");
+
+        if (accName) accName.textContent = activeRecoverAccount.name || activeRecoverAccount.username;
+        if (accUser) accUser.textContent = `@${activeRecoverAccount.username}`;
+
+        if (secretLabel && activeRecoverAccount.recovery_question) {
+            secretLabel.textContent = activeRecoverAccount.recovery_question;
+        }
+
+        if (emailHint && activeRecoverAccount.masked_email) {
+            emailHint.textContent = `Registrado como ${activeRecoverAccount.masked_email}. Ingrésalo completo para confirmar tu identidad.`;
+        }
+
+        const hasSecret = activeRecoverAccount.has_recovery_question;
+        const hasEmail = activeRecoverAccount.has_email;
+
+        if (hasSecret && hasEmail) {
+            if (methodsTabs) methodsTabs.classList.remove("hidden");
+            setRecoverMethod("secret_word");
+        } else if (hasSecret) {
+            if (methodsTabs) methodsTabs.classList.add("hidden");
+            setRecoverMethod("secret_word");
+        } else if (hasEmail) {
+            if (methodsTabs) methodsTabs.classList.add("hidden");
+            setRecoverMethod("email_match");
+        } else {
+            if (methodsTabs) methodsTabs.classList.add("hidden");
+            setRecoverMethod("secret_word");
+        }
+
+        if (lookupForm) lookupForm.classList.add("hidden");
+        if (resetForm) resetForm.classList.remove("hidden");
+        lucide.createIcons();
+
+    } catch (err) {
+        console.error("Lookup error:", err);
+        if (errorBox && errorText) {
+            errorText.textContent = "Error al conectar con el servidor";
+            errorBox.classList.remove("hidden");
+        }
+    } finally {
+        if (lookupBtn) {
+            lookupBtn.disabled = false;
+            lookupBtn.classList.remove("opacity-60");
+        }
+    }
+}
+
+async function handleRecoverReset(e) {
+    e.preventDefault();
+    if (!activeRecoverAccount) return;
+    const errorBox = document.getElementById("auth-error-box");
+    const errorText = document.getElementById("auth-error-text");
+    const resetBtn = document.getElementById("recover-reset-btn");
+    const secretInput = document.getElementById("recover-secret-input");
+    const emailInput = document.getElementById("recover-email-input");
+    const newPassInput = document.getElementById("recover-new-password");
+
+    if (errorBox) errorBox.classList.add("hidden");
+
+    let verification_value = "";
+    let verification_type = activeRecoverMethod;
+
+    if (verification_type === "secret_word") {
+        verification_value = secretInput ? secretInput.value.trim() : "";
+        if (!verification_value) {
+            if (errorBox && errorText) {
+                errorText.textContent = "Por favor ingresa tu palabra secreta";
+                errorBox.classList.remove("hidden");
+            }
+            if (secretInput) secretInput.focus();
+            return;
+        }
+    } else {
+        verification_value = emailInput ? emailInput.value.trim() : "";
+        if (!verification_value) {
+            if (errorBox && errorText) {
+                errorText.textContent = "Por favor confirma tu correo o código OTP";
+                errorBox.classList.remove("hidden");
+            }
+            if (emailInput) emailInput.focus();
+            return;
+        }
+        if (/^\d{6}$/.test(verification_value)) {
+            verification_type = "otp_code";
+        } else {
+            verification_type = "email_match";
+        }
+    }
+
+    const new_password = newPassInput ? newPassInput.value.trim() : "";
+    if (!new_password || new_password.length < 4) {
+        if (errorBox && errorText) {
+            errorText.textContent = "La nueva contraseña debe tener al menos 4 caracteres";
+            errorBox.classList.remove("hidden");
+        }
+        if (newPassInput) newPassInput.focus();
+        return;
+    }
+
+    if (resetBtn) {
+        resetBtn.disabled = true;
+        resetBtn.classList.add("opacity-60");
+    }
+
+    try {
+        const res = await fetch("/api/auth/recover/reset", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                identifier: activeRecoverAccount.identifier,
+                verification_type: verification_type,
+                verification_value: verification_value,
+                new_password: new_password
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            if (errorBox && errorText) {
+                errorText.textContent = data.error || "No se pudo restablecer la contraseña";
+                errorBox.classList.remove("hidden");
+            }
+            return;
+        }
+
+        // Success!
+        setAuthSession(data.token, data.user);
+        showAuthModal(false);
+        showToast(data.message || "¡Contraseña restablecida con éxito!");
+
+        // Load data
+        await fetchPopularExercises();
+        await loadWorkoutForDate(currentDate);
+        renderWeekStrip();
+    } catch (err) {
+        console.error("Reset error:", err);
+        if (errorBox && errorText) {
+            errorText.textContent = "Error al procesar la recuperación de contraseña";
+            errorBox.classList.remove("hidden");
+        }
+    } finally {
+        if (resetBtn) {
+            resetBtn.disabled = false;
+            resetBtn.classList.remove("opacity-60");
         }
     }
 }
