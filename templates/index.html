@@ -97,15 +97,16 @@
 
             <!-- Quick Data Tools, Timer & User Profile -->
             <div class="flex items-center space-x-2">
-                <button onclick="openRestTimerModal()" id="header-timer-btn" title="Temporizador de descanso" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 transition">
-                    <i data-lucide="timer" class="w-3.5 h-3.5"></i>
-                    <span id="header-timer-text" class="font-bold">Descanso</span>
+                <!-- Prominent Rest Timer Button -->
+                <button onclick="openRestTimerModal()" id="header-timer-btn" title="Temporizador de descanso" class="text-xs px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 transition font-bold shadow-sm shadow-emerald-500/15">
+                    <i data-lucide="timer" class="w-4 h-4 text-emerald-400"></i>
+                    <span id="header-timer-text">Descanso</span>
                 </button>
-                <button onclick="loadSampleData()" title="Cargar datos de ejemplo" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 flex items-center gap-1.5 transition">
+                <button onclick="loadSampleData()" title="Cargar datos de ejemplo" class="hidden sm:flex text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 items-center gap-1.5 transition">
                     <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
-                    <span class="hidden sm:inline">Ejemplo</span>
+                    <span class="hidden md:inline">Ejemplo</span>
                 </button>
-                <button onclick="confirmResetData()" title="Limpiar datos" class="text-xs p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/30 text-slate-400 hover:text-rose-400 border border-slate-700/60 transition">
+                <button onclick="confirmResetData()" title="Limpiar datos" class="hidden sm:flex text-xs p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/30 text-slate-400 hover:text-rose-400 border border-slate-700/60 transition">
                     <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                 </button>
                 <!-- User Profile & Logout -->
@@ -118,16 +119,6 @@
                         <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
                     </button>
                 </div>
-                <!-- Install PWA button -->
-                <button id="install-pwa-btn" onclick="triggerPwaInstall()" title="Crear acceso directo en pantalla principal" class="hidden text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 transition">
-                    <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
-                    <span class="hidden sm:inline font-bold">Instalar</span>
-                </button>
-                <!-- Direct APK Download Link -->
-                <a href="/descargar-apk" title="Descargar APK Nativa para Android" class="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 transition">
-                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                    <span class="hidden sm:inline font-bold">Descargar APK</span>
-                </a>
                 <!-- Login Button (when unauthenticated) -->
                 <button id="header-login-btn" onclick="showAuthModal(true)" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition">
                     <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
@@ -153,10 +144,6 @@
                 </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">
-                <a href="/descargar-apk" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 text-xs font-bold transition flex items-center gap-1.5">
-                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                    <span class="hidden sm:inline">Descargar</span> APK
-                </a>
                 <button type="button" onclick="triggerPwaInstall()" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/25 hover:opacity-95 transition flex items-center gap-1.5">
                     <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
                     <span>Añadir a Pantalla</span>
@@ -221,8 +208,12 @@
                         class="text-xs sm:text-sm bg-transparent text-slate-400 placeholder-slate-600 focus:outline-none focus:text-slate-200 mt-1 w-full">
                 </div>
 
-                <!-- Action Button: Add Exercise -->
-                <div class="flex items-center gap-3">
+                <!-- Action Buttons: Quick Rest Timer & Add Exercise -->
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <button type="button" onclick="openRestTimerModal()" title="Abrir temporizador de descanso" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 shadow-sm">
+                        <i data-lucide="timer" class="w-4 h-4"></i>
+                        <span>Descanso</span>
+                    </button>
                     <button onclick="openAddExerciseModal()" class="w-full md:w-auto px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-sm transition shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 group">
                         <i data-lucide="plus-circle" class="w-4 h-4 group-hover:rotate-90 transition-transform"></i>
                         <span>Anotar Ejercicio</span>
@@ -424,10 +415,14 @@
     </main>
 
     <!-- Bottom Navigation Bar for Mobile -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0c121e]/95 backdrop-blur-md border-t border-slate-800 px-6 py-2 flex items-center justify-around">
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0c121e]/95 backdrop-blur-md border-t border-slate-800 px-3 py-2 flex items-center justify-around">
         <button onclick="switchTab('daily')" id="mob-btn-daily" class="flex flex-col items-center gap-1 text-emerald-400">
             <i data-lucide="calendar-check" class="w-5 h-5"></i>
             <span class="text-[10px] font-medium">Diario</span>
+        </button>
+        <button onclick="openRestTimerModal()" id="mob-btn-timer" class="flex flex-col items-center gap-1 text-slate-400 hover:text-emerald-400 active:text-emerald-400 transition">
+            <i data-lucide="timer" class="w-5 h-5"></i>
+            <span class="text-[10px] font-medium">Descanso</span>
         </button>
         <button onclick="switchTab('weekly')" id="mob-btn-weekly" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200">
             <i data-lucide="trending-up" class="w-5 h-5"></i>

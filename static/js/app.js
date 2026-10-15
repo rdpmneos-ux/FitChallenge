@@ -2083,6 +2083,13 @@ function updateTimerDisplay() {
         headerText.textContent = restTimer.isRunning ? formatted : "Descanso";
     }
 
+    // Mobile bottom button text
+    const mobTimerText = document.querySelector("#mob-btn-timer span");
+    if (mobTimerText) {
+        mobTimerText.textContent = restTimer.isRunning ? formatted : "Descanso";
+    }
+
+
     // Modal display
     const modalDigits = document.getElementById("modal-timer-digits");
     if (modalDigits) modalDigits.textContent = formatted;
