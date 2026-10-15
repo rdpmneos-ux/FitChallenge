@@ -1,4 +1,4 @@
-// FitPulse Application Logic
+// FitChallenge Application Logic
 let currentDate = getTodayDateString();
 let currentWeekStart = getMondayOfWeek(new Date());
 let currentWorkout = null;
@@ -7,6 +7,22 @@ let lastFetchedPreviousSession = null;
 let weeklyChartInstance = null;
 let historyChartInstance = null;
 let currentModalSets = [];
+
+// Muscle Group Filter State
+const MUSCLE_GROUPS = ["Todos", "Pecho", "Espalda", "Piernas", "Hombros", "Brazos", "Core"];
+let dailyMuscleFilter = "Todos";
+let weeklyMuscleFilter = "Todos";
+let historyMuscleFilter = "Todos";
+let currentWeeklyComparisons = [];
+
+// Rest Timer State
+let restTimer = {
+    totalSeconds: 90,
+    remainingSeconds: 90,
+    interval: null,
+    isRunning: false,
+    isPaused: false
+};
 
 // Helper functions for date handling
 function getTodayDateString() {
@@ -206,16 +222,32 @@ function renderExercisesList(exercises) {
     const container = document.getElementById("exercises-container");
     const emptyState = document.getElementById("empty-workout-state");
 
+    renderDailyMuscleFilters();
+
     if (!exercises || exercises.length === 0) {
         container.innerHTML = "";
         emptyState.classList.remove("hidden");
         return;
     }
 
+    const filtered = (dailyMuscleFilter === "Todos")
+        ? exercises
+        : exercises.filter(ex => ex.muscle_group && ex.muscle_group.toLowerCase().includes(dailyMuscleFilter.toLowerCase()));
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-8 text-slate-400 text-xs bg-slate-900/40 rounded-2xl border border-slate-800">
+                No hay ejercicios de <strong>${dailyMuscleFilter}</strong> registrados hoy.
+            </div>
+        `;
+        emptyState.classList.add("hidden");
+        return;
+    }
+
     emptyState.classList.add("hidden");
     container.innerHTML = "";
 
-    exercises.forEach(ex => {
+    filtered.forEach(ex => {
         const comp = ex.comparison;
         const stats = ex.stats;
         const prevStats = ex.previous_stats;
@@ -294,6 +326,11 @@ function renderExercisesList(exercises) {
                     </div>
                 </div>
                 <div class="flex items-center gap-2 self-start sm:self-auto">
+                    <!-- Quick Rest Timer Launch Button -->
+                    <button onclick="startPresetTimer(90)" title="Iniciar descanso de 90s" class="text-xs px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold transition">
+                        <i data-lucide="timer" class="w-3.5 h-3.5"></i>
+                        <span>90s Descanso</span>
+                    </button>
                     ${badgeHtml}
                     <button onclick="deleteExercise(${ex.id})" title="Eliminar ejercicio" class="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition">
                         <i data-lucide="trash" class="w-3.5 h-3.5"></i>
@@ -648,8 +685,10 @@ async function loadWeeklyReport(dateStr) {
         // Render Bar Chart
         renderWeeklyChart(report.days_distribution);
 
-        // Render Exercise Breakdown Table
-        renderWeeklyExercisesTable(report.exercise_comparisons);
+        // Store and Render Exercise Breakdown Table with Muscle Filters
+        currentWeeklyComparisons = report.exercise_comparisons || [];
+        renderWeeklyMuscleFilters();
+        renderWeeklyExercisesTable(currentWeeklyComparisons);
 
         lucide.createIcons();
     } catch (e) {
@@ -737,16 +776,23 @@ function renderWeeklyExercisesTable(comparisons) {
     const container = document.getElementById("weekly-exercises-table-container");
     container.innerHTML = "";
 
-    if (!comparisons || comparisons.length === 0) {
+    renderWeeklyMuscleFilters();
+
+    const data = comparisons || currentWeeklyComparisons || [];
+    const filtered = (weeklyMuscleFilter === "Todos")
+        ? data
+        : data.filter(c => c.muscle_group && c.muscle_group.toLowerCase().includes(weeklyMuscleFilter.toLowerCase()));
+
+    if (!filtered || filtered.length === 0) {
         container.innerHTML = `
-            <div class="text-center py-8 text-slate-500 text-xs">
-                No hay ejercicios completados en esta semana.
+            <div class="text-center py-8 text-slate-500 text-xs bg-slate-950/40 rounded-xl border border-slate-800">
+                No hay ejercicios de <strong>${weeklyMuscleFilter}</strong> completados en esta semana.
             </div>
         `;
         return;
     }
 
-    comparisons.forEach(c => {
+    filtered.forEach(c => {
         const comp = c.comparison;
         const stats = c.stats;
         const prev = c.previous_stats;
@@ -811,11 +857,30 @@ function renderWeeklyExercisesTable(comparisons) {
 
 async function initHistoryView() {
     await fetchPopularExercises();
+    renderHistoryMuscleFilters();
+    populateHistoryExerciseSelect();
+}
+
+function populateHistoryExerciseSelect() {
     const select = document.getElementById("history-exercise-select");
     if (!select) return;
 
+    const filtered = (historyMuscleFilter === "Todos")
+        ? popularExercises
+        : popularExercises.filter(ex => ex.muscle && ex.muscle.toLowerCase().includes(historyMuscleFilter.toLowerCase()));
+
     select.innerHTML = "";
-    popularExercises.forEach((ex, idx) => {
+    if (filtered.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = `No hay ejercicios en ${historyMuscleFilter}`;
+        select.appendChild(opt);
+        renderHistoryChart([]);
+        renderHistoryTimeline([]);
+        return;
+    }
+
+    filtered.forEach((ex, idx) => {
         const opt = document.createElement("option");
         opt.value = ex.name;
         opt.textContent = `${ex.name} (${ex.muscle})`;
@@ -823,9 +888,7 @@ async function initHistoryView() {
         select.appendChild(opt);
     });
 
-    if (popularExercises.length > 0) {
-        loadExerciseHistory(popularExercises[0].name);
-    }
+    loadExerciseHistory(filtered[0].name);
 }
 
 function onHistoryExerciseChanged(name) {
@@ -1007,4 +1070,283 @@ function escapeHtml(text) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+// ==========================================
+// MUSCLE GROUP FILTERS
+// ==========================================
+
+function renderDailyMuscleFilters() {
+    const container = document.getElementById("daily-muscle-filters");
+    if (!container) return;
+    container.innerHTML = "";
+
+    MUSCLE_GROUPS.forEach(muscle => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `muscle-filter-pill ${dailyMuscleFilter === muscle ? 'active' : ''}`;
+        btn.textContent = muscle;
+        btn.onclick = () => setDailyMuscleFilter(muscle);
+        container.appendChild(btn);
+    });
+}
+
+function setDailyMuscleFilter(muscle) {
+    dailyMuscleFilter = muscle;
+    renderDailyMuscleFilters();
+    renderExercisesList(currentWorkout ? currentWorkout.exercises : []);
+}
+
+function renderWeeklyMuscleFilters() {
+    const container = document.getElementById("weekly-muscle-filters");
+    if (!container) return;
+    container.innerHTML = "";
+
+    MUSCLE_GROUPS.forEach(muscle => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `muscle-filter-pill ${weeklyMuscleFilter === muscle ? 'active' : ''}`;
+        btn.textContent = muscle;
+        btn.onclick = () => setWeeklyMuscleFilter(muscle);
+        container.appendChild(btn);
+    });
+}
+
+function setWeeklyMuscleFilter(muscle) {
+    weeklyMuscleFilter = muscle;
+    renderWeeklyMuscleFilters();
+    renderWeeklyExercisesTable(currentWeeklyComparisons);
+}
+
+function renderHistoryMuscleFilters() {
+    const container = document.getElementById("history-muscle-filters");
+    if (!container) return;
+    container.innerHTML = "";
+
+    MUSCLE_GROUPS.forEach(muscle => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `muscle-filter-pill ${historyMuscleFilter === muscle ? 'active' : ''}`;
+        btn.textContent = muscle;
+        btn.onclick = () => setHistoryMuscleFilter(muscle);
+        container.appendChild(btn);
+    });
+}
+
+function setHistoryMuscleFilter(muscle) {
+    historyMuscleFilter = muscle;
+    renderHistoryMuscleFilters();
+    populateHistoryExerciseSelect();
+}
+
+// ==========================================
+// REST TIMER (AUDIO SYNTH & ENGINE)
+// ==========================================
+
+let audioCtx = null;
+function getAudioContext() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+    return audioCtx;
+}
+
+function playTimerBeep(freq = 800, duration = 0.12) {
+    try {
+        const ctx = getAudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(0.35, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+    } catch (e) {
+        console.warn('Audio feedback failed:', e);
+    }
+}
+
+function playTimerFinishedChime() {
+    try {
+        const ctx = getAudioContext();
+        const now = ctx.currentTime;
+        [880, 1174, 1480].forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.14);
+            gain.gain.setValueAtTime(0.4, now + idx * 0.14);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + idx * 0.14 + 0.45);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + idx * 0.14);
+            osc.stop(now + idx * 0.14 + 0.45);
+        });
+    } catch (e) {
+        console.warn('Audio chime failed:', e);
+    }
+}
+
+function triggerVibration() {
+    if ('vibrate' in navigator) {
+        try {
+            navigator.vibrate([200, 100, 200, 100, 350]);
+        } catch (e) {}
+    }
+}
+
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function updateTimerDisplay() {
+    const formatted = formatTime(restTimer.remainingSeconds);
+
+    // Floating widget
+    const floatingCountdown = document.getElementById("floating-timer-countdown");
+    if (floatingCountdown) floatingCountdown.textContent = formatted;
+
+    // Header button text
+    const headerText = document.getElementById("header-timer-text");
+    if (headerText) {
+        headerText.textContent = restTimer.isRunning ? formatted : "Descanso";
+    }
+
+    // Modal display
+    const modalDigits = document.getElementById("modal-timer-digits");
+    if (modalDigits) modalDigits.textContent = formatted;
+
+    const modalStatus = document.getElementById("modal-timer-status");
+    if (modalStatus) {
+        if (!restTimer.isRunning && restTimer.remainingSeconds === restTimer.totalSeconds) {
+            modalStatus.textContent = "Listo para iniciar";
+        } else if (restTimer.isPaused) {
+            modalStatus.textContent = "En pausa";
+        } else if (restTimer.isRunning) {
+            modalStatus.textContent = "Descansando...";
+        } else {
+            modalStatus.textContent = "¡Tiempo completado!";
+        }
+    }
+
+    // Modal progress bar
+    const progressBar = document.getElementById("modal-timer-progress-bar");
+    if (progressBar) {
+        const pct = restTimer.totalSeconds > 0
+            ? (restTimer.remainingSeconds / restTimer.totalSeconds) * 100
+            : 0;
+        progressBar.style.width = `${pct}%`;
+        if (pct <= 20) {
+            progressBar.className = "bg-gradient-to-r from-rose-500 to-amber-400 h-full transition-all duration-300";
+        } else {
+            progressBar.className = "bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-300";
+        }
+    }
+
+    // Modal start/pause button
+    const modalPlayText = document.getElementById("modal-start-pause-text");
+    if (modalPlayText) {
+        modalPlayText.textContent = (restTimer.isRunning && !restTimer.isPaused) ? "Pausar" : "Iniciar";
+    }
+
+    // Floating pause button
+    const floatingPauseBtn = document.getElementById("floating-pause-btn");
+    if (floatingPauseBtn) {
+        floatingPauseBtn.innerHTML = (restTimer.isRunning && !restTimer.isPaused)
+            ? '<i data-lucide="pause" class="w-3.5 h-3.5"></i>'
+            : '<i data-lucide="play" class="w-3.5 h-3.5"></i>';
+        lucide.createIcons();
+    }
+}
+
+function startPresetTimer(seconds) {
+    stopRestTimer(false);
+    restTimer.totalSeconds = seconds;
+    restTimer.remainingSeconds = seconds;
+    restTimer.isRunning = true;
+    restTimer.isPaused = false;
+
+    // Show floating widget
+    const floating = document.getElementById("floating-rest-timer");
+    if (floating) floating.classList.remove("hidden");
+
+    updateTimerDisplay();
+
+    restTimer.interval = setInterval(() => {
+        if (restTimer.isPaused) return;
+
+        restTimer.remainingSeconds--;
+        updateTimerDisplay();
+
+        // 3-2-1 Warning beeps
+        if (restTimer.remainingSeconds >= 1 && restTimer.remainingSeconds <= 3) {
+            playTimerBeep(750, 0.1);
+        }
+
+        // Finished!
+        if (restTimer.remainingSeconds <= 0) {
+            clearInterval(restTimer.interval);
+            restTimer.interval = null;
+            restTimer.isRunning = false;
+            restTimer.isPaused = false;
+
+            updateTimerDisplay();
+            playTimerFinishedChime();
+            triggerVibration();
+            showToast("🔔 ¡Tiempo de descanso terminado! Siguiente serie 💪");
+        }
+    }, 1000);
+
+    lucide.createIcons();
+}
+
+function toggleTimerPause() {
+    if (!restTimer.isRunning && restTimer.remainingSeconds > 0) {
+        startPresetTimer(restTimer.remainingSeconds);
+        return;
+    }
+    restTimer.isPaused = !restTimer.isPaused;
+    updateTimerDisplay();
+}
+
+function addSecondsToTimer(delta) {
+    restTimer.remainingSeconds = Math.max(5, restTimer.remainingSeconds + delta);
+    if (restTimer.remainingSeconds > restTimer.totalSeconds) {
+        restTimer.totalSeconds = restTimer.remainingSeconds;
+    }
+    updateTimerDisplay();
+}
+
+function stopRestTimer(hideFloating = true) {
+    if (restTimer.interval) {
+        clearInterval(restTimer.interval);
+        restTimer.interval = null;
+    }
+    restTimer.isRunning = false;
+    restTimer.isPaused = false;
+    restTimer.remainingSeconds = restTimer.totalSeconds;
+    updateTimerDisplay();
+
+    if (hideFloating) {
+        const floating = document.getElementById("floating-rest-timer");
+        if (floating) floating.classList.add("hidden");
+    }
+}
+
+function openRestTimerModal() {
+    updateTimerDisplay();
+    document.getElementById("rest-timer-modal").classList.remove("hidden");
+    lucide.createIcons();
+}
+
+function closeRestTimerModal() {
+    document.getElementById("rest-timer-modal").classList.add("hidden");
 }

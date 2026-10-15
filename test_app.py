@@ -25,7 +25,7 @@ class WorkoutTrackerTestCase(unittest.TestCase):
     def test_homepage(self):
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
-        self.assertIn(b"FitPulse", res.data)
+        self.assertIn(b"FitChallenge", res.data)
 
     def test_add_exercise_and_compare(self):
         # Day 1: Bench press 3 sets of 10 @ 60kg
