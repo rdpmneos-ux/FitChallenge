@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import models
 
-def populate_seed_data(db_path=models.DB_PATH):
+def populate_seed_data(db_path=models.DB_PATH, user_id=1):
     models.init_db(db_path)
     today = datetime.now()
     # Find Monday of current week
@@ -185,13 +185,13 @@ def populate_seed_data(db_path=models.DB_PATH):
     with models.get_db(db_path) as conn:
         cur = conn.cursor()
         for w in sample_plan:
-            # Upsert workout
+            # Upsert workout for this user
             cur.execute("""
-                INSERT INTO workouts (date, title, notes)
-                VALUES (?, ?, ?)
-                ON CONFLICT(date) DO UPDATE SET title=excluded.title, notes=excluded.notes
-            """, (w["date"], w["title"], w["notes"]))
-            cur.execute("SELECT id FROM workouts WHERE date = ?", (w["date"],))
+                INSERT INTO workouts (user_id, date, title, notes)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, date) DO UPDATE SET title=excluded.title, notes=excluded.notes
+            """, (user_id, w["date"], w["title"], w["notes"]))
+            cur.execute("SELECT id FROM workouts WHERE user_id = ? AND date = ?", (user_id, w["date"]))
             w_id = cur.fetchone()["id"]
 
             # Remove existing exercises for this day if re-seeding

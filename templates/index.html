@@ -89,7 +89,7 @@
                 </button>
             </nav>
 
-            <!-- Quick Data Tools & Timer -->
+            <!-- Quick Data Tools, Timer & User Profile -->
             <div class="flex items-center space-x-2">
                 <button onclick="openRestTimerModal()" id="header-timer-btn" title="Temporizador de descanso" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 transition">
                     <i data-lucide="timer" class="w-3.5 h-3.5"></i>
@@ -102,6 +102,16 @@
                 <button onclick="confirmResetData()" title="Limpiar datos" class="text-xs p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/30 text-slate-400 hover:text-rose-400 border border-slate-700/60 transition">
                     <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                 </button>
+                <!-- User Profile & Logout -->
+                <div id="user-profile-widget" class="flex items-center space-x-1.5 pl-1.5 border-l border-slate-800 hidden">
+                    <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/50 text-xs text-slate-200">
+                        <i data-lucide="user" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span id="user-profile-name" class="font-semibold max-w-[85px] sm:max-w-[120px] truncate">Usuario</span>
+                    </div>
+                    <button onclick="logoutUser()" title="Cerrar sesión" class="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 border border-slate-700/60 transition">
+                        <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
             </div>
         </div>
     </header>
@@ -598,6 +608,80 @@
                     <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
                     <span>Reiniciar</span>
                 </button>
+            </div>
+        </div>
+    <!-- AUTH MODAL (LOGIN & REGISTER) -->
+    <div id="auth-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="bg-[#0f172a] border border-slate-800 rounded-3xl w-full max-w-sm p-6 sm:p-7 shadow-2xl space-y-5 animate-scale-up">
+            
+            <!-- Modal Header with App Branding -->
+            <div class="text-center space-y-2">
+                <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                    <i data-lucide="shield-check" class="w-7 h-7 text-slate-950 font-bold"></i>
+                </div>
+                <h2 class="text-xl font-black tracking-tight text-white">FitChallenge Privado</h2>
+                <p class="text-xs text-slate-400">Tus marcas, cargas y progreso están 100% aislados y protegidos para ti.</p>
+            </div>
+
+            <!-- Tab Switcher: Iniciar Sesión / Crear Cuenta -->
+            <div class="flex rounded-xl bg-slate-900/90 p-1 border border-slate-800 text-xs font-semibold">
+                <button type="button" onclick="setAuthTab('login')" id="auth-tab-login" class="flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm">
+                    Iniciar Sesión
+                </button>
+                <button type="button" onclick="setAuthTab('register')" id="auth-tab-register" class="flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition">
+                    Crear Cuenta
+                </button>
+            </div>
+
+            <!-- Alert Box for Auth Errors -->
+            <div id="auth-error-box" class="hidden p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium flex items-center gap-2">
+                <i data-lucide="alert-circle" class="w-4 h-4 flex-shrink-0"></i>
+                <span id="auth-error-text"></span>
+            </div>
+
+            <!-- Auth Form -->
+            <form id="auth-form" onsubmit="handleAuthSubmit(event)" class="space-y-3.5">
+                <!-- Name field (only visible for registration) -->
+                <div id="auth-name-container" class="hidden space-y-1">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tu Nombre o Apodo</label>
+                    <div class="relative">
+                        <i data-lucide="smile" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="auth-name-input" placeholder="Ej: Juan Fit" class="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                    </div>
+                </div>
+
+                <!-- Username field -->
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Usuario</label>
+                    <div class="relative">
+                        <i data-lucide="user" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="auth-username-input" required autocomplete="username" placeholder="Tu usuario (mínimo 3 letras)" class="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                    </div>
+                </div>
+
+                <!-- Password field -->
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contraseña</label>
+                    <div class="relative">
+                        <i data-lucide="key-round" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="password" id="auth-password-input" required autocomplete="current-password" placeholder="Tu contraseña privada" class="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                        <button type="button" onclick="togglePasswordVisibility()" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                            <i id="auth-password-eye" data-lucide="eye" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <button type="submit" id="auth-submit-btn" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 hover:opacity-95 transition flex items-center justify-center gap-2 mt-2">
+                    <span id="auth-submit-text">Entrar a mi Gimnasio</span>
+                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </button>
+            </form>
+
+            <div class="pt-1 text-center">
+                <p class="text-[10px] text-slate-500">
+                    Tu sesión se mantendrá guardada en tu teléfono de forma permanente.
+                </p>
             </div>
         </div>
     </div>

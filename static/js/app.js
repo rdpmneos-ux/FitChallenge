@@ -8,6 +8,192 @@ let weeklyChartInstance = null;
 let historyChartInstance = null;
 let currentModalSets = [];
 
+// Authentication & User State
+let currentUser = null;
+let currentAuthTab = 'login'; // 'login' or 'register'
+
+function getAuthToken() {
+    return localStorage.getItem('fitchallenge_token');
+}
+
+function setAuthSession(token, user) {
+    localStorage.setItem('fitchallenge_token', token);
+    localStorage.setItem('fitchallenge_user', JSON.stringify(user));
+    currentUser = user;
+    updateUserProfileUI();
+}
+
+function clearAuthSession() {
+    localStorage.removeItem('fitchallenge_token');
+    localStorage.removeItem('fitchallenge_user');
+    currentUser = null;
+    updateUserProfileUI();
+}
+
+function updateUserProfileUI() {
+    const profileWidget = document.getElementById("user-profile-widget");
+    const profileName = document.getElementById("user-profile-name");
+    if (currentUser) {
+        if (profileWidget) profileWidget.classList.remove("hidden");
+        if (profileName) profileName.textContent = currentUser.name || currentUser.username;
+    } else {
+        if (profileWidget) profileWidget.classList.add("hidden");
+    }
+}
+
+function showAuthModal(show = true) {
+    const modal = document.getElementById("auth-modal");
+    if (!modal) return;
+    if (show) {
+        modal.classList.remove("hidden");
+        setAuthTab(currentAuthTab);
+    } else {
+        modal.classList.add("hidden");
+    }
+}
+
+function setAuthTab(tab) {
+    currentAuthTab = tab;
+    const loginTabBtn = document.getElementById("auth-tab-login");
+    const regTabBtn = document.getElementById("auth-tab-register");
+    const nameContainer = document.getElementById("auth-name-container");
+    const submitText = document.getElementById("auth-submit-text");
+    const errorBox = document.getElementById("auth-error-box");
+    if (errorBox) errorBox.classList.add("hidden");
+
+    if (tab === 'login') {
+        if (loginTabBtn) loginTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
+        if (regTabBtn) regTabBtn.className = "flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition";
+        if (nameContainer) nameContainer.classList.add("hidden");
+        if (submitText) submitText.textContent = "Entrar a mi Gimnasio";
+    } else {
+        if (regTabBtn) regTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
+        if (loginTabBtn) loginTabBtn.className = "flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition";
+        if (nameContainer) nameContainer.classList.remove("hidden");
+        if (submitText) submitText.textContent = "Crear Mi Cuenta Segura";
+    }
+    lucide.createIcons();
+}
+
+function togglePasswordVisibility() {
+    const passInput = document.getElementById("auth-password-input");
+    const eyeIcon = document.getElementById("auth-password-eye");
+    if (!passInput) return;
+    if (passInput.type === "password") {
+        passInput.type = "text";
+        if (eyeIcon) eyeIcon.setAttribute("data-lucide", "eye-off");
+    } else {
+        passInput.type = "password";
+        if (eyeIcon) eyeIcon.setAttribute("data-lucide", "eye");
+    }
+    lucide.createIcons();
+}
+
+async function handleAuthSubmit(e) {
+    e.preventDefault();
+    const errorBox = document.getElementById("auth-error-box");
+    const errorText = document.getElementById("auth-error-text");
+    const submitBtn = document.getElementById("auth-submit-btn");
+    const usernameInput = document.getElementById("auth-username-input");
+    const passwordInput = document.getElementById("auth-password-input");
+    const nameInput = document.getElementById("auth-name-input");
+
+    const username = usernameInput ? usernameInput.value.trim() : "";
+    const password = passwordInput ? passwordInput.value.trim() : "";
+    const name = nameInput ? nameInput.value.trim() : "";
+
+    if (!username || !password) {
+        if (errorBox && errorText) {
+            errorText.textContent = "Por favor ingresa usuario y contraseña";
+            errorBox.classList.remove("hidden");
+        }
+        return;
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add("opacity-60");
+    }
+
+    try {
+        const endpoint = (currentAuthTab === "login") ? "/api/auth/login" : "/api/auth/register";
+        const payload = (currentAuthTab === "login") ? { username, password } : { username, password, name };
+
+        const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+            if (errorBox && errorText) {
+                errorText.textContent = data.error || "Error al procesar la solicitud";
+                errorBox.classList.remove("hidden");
+            }
+            return;
+        }
+
+        // Success!
+        setAuthSession(data.token, data.user);
+        showAuthModal(false);
+        showToast(data.message || "¡Sesión iniciada!");
+
+        // Load data
+        await fetchPopularExercises();
+        await loadWorkoutForDate(currentDate);
+        renderWeekStrip();
+    } catch (err) {
+        console.error("Auth error:", err);
+        if (errorBox && errorText) {
+            errorText.textContent = "Error de conexión al servidor";
+            errorBox.classList.remove("hidden");
+        }
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove("opacity-60");
+        }
+    }
+}
+
+async function logoutUser() {
+    const token = getAuthToken();
+    try {
+        if (token) {
+            await fetch("/api/auth/logout", {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+        }
+    } catch (e) {
+        console.error("Logout error:", e);
+    }
+    clearAuthSession();
+    showToast("Sesión cerrada");
+    showAuthModal(true);
+}
+
+// Global authenticated fetch wrapper
+async function authFetch(url, options = {}) {
+    options.headers = options.headers || {};
+    const token = getAuthToken();
+    if (token) {
+        if (options.headers instanceof Headers) {
+            options.headers.set("Authorization", `Bearer ${token}`);
+        } else {
+            options.headers["Authorization"] = `Bearer ${token}`;
+        }
+    }
+    const res = await fetch(url, options);
+    if (res.status === 401) {
+        clearAuthSession();
+        showAuthModal(true);
+        throw new Error("No autenticado");
+    }
+    return res;
+}
+
 // Muscle Group Filter State
 const MUSCLE_GROUPS = ["Todos", "Pecho", "Espalda", "Piernas", "Hombros", "Brazos", "Core"];
 let dailyMuscleFilter = "Todos";
@@ -60,9 +246,48 @@ const DAY_SHORT_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 // Initialize on DOM ready
 document.addEventListener("DOMContentLoaded", async () => {
-    await fetchPopularExercises();
-    await loadWorkoutForDate(currentDate);
-    renderWeekStrip();
+    // Check saved auth
+    const token = getAuthToken();
+    const savedUser = localStorage.getItem("fitchallenge_user");
+    if (savedUser) {
+        try { currentUser = JSON.parse(savedUser); } catch(e){}
+    }
+
+    if (!token) {
+        showAuthModal(true);
+        lucide.createIcons();
+        return;
+    }
+
+    // Verify token with backend
+    try {
+        const meRes = await fetch("/api/auth/me", {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (meRes.ok) {
+            const meData = await meRes.json();
+            currentUser = meData.user;
+            localStorage.setItem("fitchallenge_user", JSON.stringify(currentUser));
+            updateUserProfileUI();
+            await fetchPopularExercises();
+            await loadWorkoutForDate(currentDate);
+            renderWeekStrip();
+        } else {
+            clearAuthSession();
+            showAuthModal(true);
+        }
+    } catch (e) {
+        // If offline or network issue, proceed if we have cached user
+        if (currentUser) {
+            updateUserProfileUI();
+            await fetchPopularExercises();
+            await loadWorkoutForDate(currentDate);
+            renderWeekStrip();
+        } else {
+            showAuthModal(true);
+        }
+    }
+
     lucide.createIcons();
 
     // Close exercise dropdown when clicking outside
@@ -141,7 +366,7 @@ async function loadWorkoutForDate(dateStr) {
     if (datePicker) datePicker.value = dateStr;
 
     try {
-        const res = await fetch(`/api/workout?date=${dateStr}`);
+        const res = await authFetch(`/api/workout?date=${dateStr}`);
         const data = await res.json();
         currentWorkout = data.workout;
 
@@ -212,7 +437,7 @@ async function saveWorkoutMeta() {
     const notes = document.getElementById("workout-notes-input").value;
 
     try {
-        await fetch("/api/workout", {
+        await authFetch("/api/workout", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -401,7 +626,7 @@ function renderExercisesList(exercises) {
 
 async function fetchPopularExercises() {
     try {
-        const res = await fetch("/api/popular_exercises");
+        const res = await authFetch("/api/popular_exercises");
         const data = await res.json();
         popularExercises = data.exercises || [];
 
@@ -595,7 +820,7 @@ function onModalExerciseInput(val) {
 
         // Query the last occurrence of this exercise before currentDate
         try {
-            const res = await fetch(`/api/exercise/last?name=${encodeURIComponent(name)}&before_date=${currentDate}`);
+            const res = await authFetch(`/api/exercise/last?name=${encodeURIComponent(name)}&before_date=${currentDate}`);
             const data = await res.json();
             const lastSession = data.last_session;
 
@@ -707,7 +932,7 @@ async function submitAddExercise() {
             sets: currentModalSets
         };
 
-        const res = await fetch("/api/exercise", {
+        const res = await authFetch("/api/exercise", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
@@ -735,7 +960,7 @@ async function deleteExercise(exerciseId) {
     if (!confirm("¿Seguro que deseas eliminar este ejercicio de la sesión?")) return;
 
     try {
-        const res = await fetch(`/api/exercise/${exerciseId}`, { method: "DELETE" });
+        const res = await authFetch(`/api/exercise/${exerciseId}`, { method: "DELETE" });
         const data = await res.json();
         currentWorkout = data.workout;
         renderExercisesList(currentWorkout ? currentWorkout.exercises : []);
@@ -768,7 +993,7 @@ async function promptChangeMuscleGroup(exerciseName, currentGroup) {
     if (!selectedGroup) return;
 
     try {
-        const res = await fetch("/api/exercise/update_muscle_group", {
+        const res = await authFetch("/api/exercise/update_muscle_group", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ exercise_name: exerciseName, muscle_group: selectedGroup })
@@ -787,7 +1012,7 @@ async function promptChangeMuscleGroup(exerciseName, currentGroup) {
 async function deleteEntireExercise(exerciseName) {
     if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente el ejercicio "${exerciseName}" y todos sus registros de la app?`)) return;
     try {
-        const res = await fetch("/api/exercise/delete_by_name", {
+        const res = await authFetch("/api/exercise/delete_by_name", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ exercise_name: exerciseName })
@@ -821,7 +1046,7 @@ function goToCurrentWeek() {
 
 async function loadWeeklyReport(dateStr) {
     try {
-        const res = await fetch(`/api/weekly?date=${dateStr}`);
+        const res = await authFetch(`/api/weekly?date=${dateStr}`);
         const report = await res.json();
 
         // Label
@@ -1087,7 +1312,7 @@ function onHistoryExerciseChanged(name) {
 
 async function loadExerciseHistory(exerciseName) {
     try {
-        const res = await fetch(`/api/exercise/history?name=${encodeURIComponent(exerciseName)}`);
+        const res = await authFetch(`/api/exercise/history?name=${encodeURIComponent(exerciseName)}`);
         const data = await res.json();
         const history = data.history || [];
 
@@ -1216,7 +1441,7 @@ function renderHistoryTimeline(history) {
 async function loadSampleData() {
     if (!confirm("¿Deseas cargar datos de prueba para esta semana y la anterior? Verás comparativas reales al instante.")) return;
     try {
-        const res = await fetch("/api/seed", { method: "POST" });
+        const res = await authFetch("/api/seed", { method: "POST" });
         const data = await res.json();
         showToast(data.message || "Datos de ejemplo cargados");
         await loadWorkoutForDate(currentDate);
@@ -1227,11 +1452,11 @@ async function loadSampleData() {
 }
 
 async function confirmResetData() {
-    if (!confirm("⚠️ ¿Estás seguro de que deseas borrar todos los entrenamientos de la base de datos?")) return;
+    if (!confirm("⚠️ ¿Estás seguro de que deseas borrar tus entrenamientos registrados en tu cuenta?")) return;
     try {
-        const res = await fetch("/api/reset", { method: "POST" });
+        const res = await authFetch("/api/reset", { method: "POST" });
         const data = await res.json();
-        showToast("Base de datos reiniciada");
+        showToast("Tus datos han sido reiniciados");
         await loadWorkoutForDate(currentDate);
     } catch (e) {
         console.error("Error al reiniciar datos:", e);

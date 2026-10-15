@@ -22,12 +22,118 @@ class WorkoutTrackerTestCase(unittest.TestCase):
             except Exception:
                 pass
 
+    def register_and_get_token(self, username="tester", password="password123", name="Test User"):
+        res = self.client.post("/api/auth/register", json={
+            "username": username,
+            "password": password,
+            "name": name
+        })
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        return data["token"], data["user"]
+
     def test_homepage(self):
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
         self.assertIn(b"FitChallenge", res.data)
 
+    def test_auth_registration_and_login(self):
+        # Register user
+        token, user = self.register_and_get_token("carlos", "clave123", "Carlos Fit")
+        self.assertEqual(user["username"], "carlos")
+        self.assertEqual(user["name"], "Carlos Fit")
+
+        # Check me
+        res_me = self.client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(res_me.status_code, 200)
+        self.assertEqual(json.loads(res_me.data)["user"]["username"], "carlos")
+
+        # Duplicate username should fail
+        res_dup = self.client.post("/api/auth/register", json={
+            "username": "carlos",
+            "password": "otraclave123",
+            "name": "Carlos Otro"
+        })
+        self.assertEqual(res_dup.status_code, 400)
+
+        # Login with correct password
+        res_login = self.client.post("/api/auth/login", json={
+            "username": "carlos",
+            "password": "clave123"
+        })
+        self.assertEqual(res_login.status_code, 200)
+        login_data = json.loads(res_login.data)
+        self.assertIn("token", login_data)
+
+        # Login with bad password
+        res_bad = self.client.post("/api/auth/login", json={
+            "username": "carlos",
+            "password": "wrongpassword"
+        })
+        self.assertEqual(res_bad.status_code, 401)
+
+    def test_unauthenticated_access_rejected(self):
+        # Accessing workout without token returns 401
+        res = self.client.get("/api/workout?date=2026-10-15")
+        self.assertEqual(res.status_code, 401)
+
+        # Adding exercise without token returns 401
+        res2 = self.client.post("/api/exercise", json={"exercise_name": "Sentadilla"})
+        self.assertEqual(res2.status_code, 401)
+
+    def test_multi_user_data_isolation(self):
+        # Register two different users
+        token_a, user_a = self.register_and_get_token("usuario_a", "clave123", "Usuario A")
+        token_b, user_b = self.register_and_get_token("usuario_b", "clave123", "Usuario B")
+
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+        headers_b = {"Authorization": f"Bearer {token_b}"}
+
+        # User A logs Bench Press on 2026-10-01
+        payload_a = {
+            "date": "2026-10-01",
+            "exercise_name": "Press de Banca",
+            "muscle_group": "Pecho",
+            "sets": [{"reps": 10, "weight": 70.0}]
+        }
+        res_a = self.client.post("/api/exercise", json=payload_a, headers=headers_a)
+        self.assertEqual(res_a.status_code, 200)
+        ex_a_id = json.loads(res_a.data)["workout"]["exercises"][0]["id"]
+
+        # User B logs Sentadilla on the same day 2026-10-01
+        payload_b = {
+            "date": "2026-10-01",
+            "exercise_name": "Sentadilla con Barra",
+            "muscle_group": "Piernas",
+            "sets": [{"reps": 8, "weight": 100.0}]
+        }
+        res_b = self.client.post("/api/exercise", json=payload_b, headers=headers_b)
+        self.assertEqual(res_b.status_code, 200)
+
+        # User A checks workout on 2026-10-01: must see Bench Press, NOT Sentadilla
+        w_a = json.loads(self.client.get("/api/workout?date=2026-10-01", headers=headers_a).data)["workout"]
+        exercises_a = [e["exercise_name"] for e in w_a["exercises"]]
+        self.assertIn("Press de Banca", exercises_a)
+        self.assertNotIn("Sentadilla con Barra", exercises_a)
+
+        # User B checks workout on 2026-10-01: must see Sentadilla, NOT Bench Press
+        w_b = json.loads(self.client.get("/api/workout?date=2026-10-01", headers=headers_b).data)["workout"]
+        exercises_b = [e["exercise_name"] for e in w_b["exercises"]]
+        self.assertIn("Sentadilla con Barra", exercises_b)
+        self.assertNotIn("Press de Banca", exercises_b)
+
+        # User B cannot delete User A's exercise!
+        res_del = self.client.delete(f"/api/exercise/{ex_a_id}", headers=headers_b)
+        self.assertEqual(res_del.status_code, 404)
+
+        # User A CAN delete their own exercise
+        res_del_ok = self.client.delete(f"/api/exercise/{ex_a_id}", headers=headers_a)
+        self.assertEqual(res_del_ok.status_code, 200)
+
     def test_add_exercise_and_compare(self):
+        token, _ = self.register_and_get_token("progreso_user", "clave123")
+        headers = {"Authorization": f"Bearer {token}"}
+
         # Day 1: Bench press 3 sets of 10 @ 60kg
         payload_day1 = {
             "date": "2026-10-01",
@@ -39,14 +145,14 @@ class WorkoutTrackerTestCase(unittest.TestCase):
                 {"reps": 10, "weight": 60.0}
             ]
         }
-        res1 = self.client.post("/api/exercise", json=payload_day1)
+        res1 = self.client.post("/api/exercise", json=payload_day1, headers=headers)
         self.assertEqual(res1.status_code, 200)
         data1 = json.loads(res1.data)
         ex1 = data1["workout"]["exercises"][0]
         self.assertEqual(ex1["comparison"]["status"], "nuevo")
 
         # Query /api/exercise/last
-        res_last = self.client.get("/api/exercise/last?name=Press de Banca&before_date=2026-10-08")
+        res_last = self.client.get("/api/exercise/last?name=Press de Banca&before_date=2026-10-08", headers=headers)
         self.assertEqual(res_last.status_code, 200)
         last_data = json.loads(res_last.data)
         self.assertIsNotNone(last_data["last_session"])
@@ -63,7 +169,7 @@ class WorkoutTrackerTestCase(unittest.TestCase):
                 {"reps": 10, "weight": 62.5}
             ]
         }
-        res2 = self.client.post("/api/exercise", json=payload_day2)
+        res2 = self.client.post("/api/exercise", json=payload_day2, headers=headers)
         self.assertEqual(res2.status_code, 200)
         data2 = json.loads(res2.data)
         ex2 = data2["workout"]["exercises"][0]
@@ -71,7 +177,7 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         self.assertEqual(ex2["comparison"]["weight_diff"], 2.5)
 
         # Weekly summary for week containing 2026-10-08
-        res_week = self.client.get("/api/weekly?date=2026-10-08")
+        res_week = self.client.get("/api/weekly?date=2026-10-08", headers=headers)
         self.assertEqual(res_week.status_code, 200)
         week_data = json.loads(res_week.data)
         self.assertEqual(week_data["improvements_count"], 1)

@@ -1,6 +1,8 @@
 import sqlite3
 import os
-from datetime import datetime, timedelta
+import secrets
+from datetime import datetime, timedelta, timezone
+from werkzeug.security import generate_password_hash, check_password_hash
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
 
@@ -17,14 +19,77 @@ def init_db(db_path=None):
         db_path = DB_PATH
     with get_db(db_path) as conn:
         conn.executescript("""
-        CREATE TABLE IF NOT EXISTS workouts (
+        CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL UNIQUE, -- YYYY-MM-DD
-            title TEXT,
-            notes TEXT,
+            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            name TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """)
+
+        # Check workouts table
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='workouts'")
+        workouts_exists = cur.fetchone() is not None
+
+        if not workouts_exists:
+            conn.executescript("""
+            CREATE TABLE workouts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1,
+                date TEXT NOT NULL, -- YYYY-MM-DD
+                title TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id, date)
+            );
+            """)
+        else:
+            cur.execute("PRAGMA table_info(workouts)")
+            columns = [row[1] for row in cur.fetchall()]
+            if "user_id" not in columns:
+                conn.execute("PRAGMA foreign_keys = OFF")
+                cur.execute("SELECT id FROM users LIMIT 1")
+                default_user = cur.fetchone()
+                if not default_user:
+                    cur.execute(
+                        "INSERT INTO users (username, password_hash, name) VALUES (?, ?, ?)",
+                        ("admin", generate_password_hash("admin123"), "Administrador")
+                    )
+                    default_user_id = cur.lastrowid
+                else:
+                    default_user_id = default_user[0]
+
+                cur.executescript(f"""
+                CREATE TABLE workouts_migrated (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL DEFAULT {default_user_id},
+                    date TEXT NOT NULL,
+                    title TEXT,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    UNIQUE(user_id, date)
+                );
+                INSERT INTO workouts_migrated (id, user_id, date, title, notes, created_at)
+                SELECT id, {default_user_id}, date, title, notes, created_at FROM workouts;
+
+                DROP TABLE workouts;
+                ALTER TABLE workouts_migrated RENAME TO workouts;
+                """)
+                conn.execute("PRAGMA foreign_keys = ON")
+
+        conn.executescript("""
         CREATE TABLE IF NOT EXISTS exercise_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             workout_id INTEGER NOT NULL,
@@ -45,10 +110,112 @@ def init_db(db_path=None):
             FOREIGN KEY (exercise_log_id) REFERENCES exercise_logs(id) ON DELETE CASCADE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_workouts_date ON workouts(date);
+        CREATE INDEX IF NOT EXISTS idx_workouts_user_date ON workouts(user_id, date);
         CREATE INDEX IF NOT EXISTS idx_exercise_name ON exercise_logs(exercise_name);
         CREATE INDEX IF NOT EXISTS idx_exercise_workout ON exercise_logs(workout_id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
         """)
+        conn.commit()
+
+def create_user(username, password, name=None, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    username = (username or "").strip().lower()
+    name = (name or "").strip() or username
+    password = (password or "").strip()
+
+    if not username or len(username) < 3:
+        return None, "El usuario debe tener al menos 3 caracteres"
+    if not password or len(password) < 4:
+        return None, "La contraseña debe tener al menos 4 caracteres"
+
+    pwd_hash = generate_password_hash(password)
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE username = ?", (username,))
+        if cur.fetchone():
+            return None, "El nombre de usuario ya está registrado. Elige otro o inicia sesión."
+        
+        cur.execute(
+            "INSERT INTO users (username, password_hash, name) VALUES (?, ?, ?)",
+            (username, pwd_hash, name)
+        )
+        user_id = cur.lastrowid
+        conn.commit()
+        return {"id": user_id, "username": username, "name": name}, None
+
+def authenticate_user(username, password, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    username = (username or "").strip().lower()
+    password = (password or "").strip()
+    if not username or not password:
+        return None, "Usuario y contraseña requeridos"
+
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE username = ?", (username,))
+        row = cur.fetchone()
+        if not row:
+            return None, "Usuario o contraseña incorrectos"
+        if not check_password_hash(row["password_hash"], password):
+            return None, "Usuario o contraseña incorrectos"
+
+        return {"id": row["id"], "username": row["username"], "name": row["name"]}, None
+
+def create_session(user_id, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    token = secrets.token_hex(32)
+    # 1 year session expiration for mobile convenience
+    expires_at = datetime.now(timezone.utc) + timedelta(days=365)
+    with get_db(db_path) as conn:
+        conn.execute(
+            "INSERT INTO user_sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+            (token, user_id, expires_at.isoformat())
+        )
+        conn.commit()
+    return token
+
+def get_user_by_token(token, db_path=None):
+    if not token:
+        return None
+    if db_path is None:
+        db_path = DB_PATH
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT u.id, u.username, u.name, s.expires_at
+            FROM user_sessions s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.token = ?
+        """, (token,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        
+        if row["expires_at"]:
+            try:
+                exp = datetime.fromisoformat(row["expires_at"])
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=timezone.utc)
+                if exp < datetime.now(timezone.utc):
+                    conn.execute("DELETE FROM user_sessions WHERE token = ?", (token,))
+                    conn.commit()
+                    return None
+            except Exception:
+                pass
+
+        return {"id": row["id"], "username": row["username"], "name": row["name"]}
+
+def delete_session(token, db_path=None):
+    if not token:
+        return
+    if db_path is None:
+        db_path = DB_PATH
+    with get_db(db_path) as conn:
+        conn.execute("DELETE FROM user_sessions WHERE token = ?", (token,))
+        conn.commit()
 
 def compute_exercise_stats(sets):
     """
@@ -191,9 +358,10 @@ def compare_exercise_sessions(current_stats, previous_stats):
     }
 
 def get_workout_details(workout_row, conn):
-    """Fetches all exercises and sets for a workout, enriched with previous comparisons."""
+    """Fetches all exercises and sets for a workout, enriched with previous comparisons for this user."""
     workout_id = workout_row["id"]
     workout_date = workout_row["date"]
+    user_id = workout_row["user_id"] if "user_id" in workout_row.keys() else 1
 
     cur = conn.cursor()
     cur.execute("""
@@ -217,16 +385,17 @@ def get_workout_details(workout_row, conn):
         sets_raw = [dict(s) for s in cur.fetchall()]
         current_stats = compute_exercise_stats(sets_raw)
 
-        # Find the most recent previous exercise before this workout date
+        # Find the most recent previous exercise before this workout date for this user
         cur.execute("""
             SELECT el.id, el.workout_id, w.date, el.exercise_name
             FROM exercise_logs el
             JOIN workouts w ON el.workout_id = w.id
-            WHERE LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+            WHERE w.user_id = ?
+              AND LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
               AND w.date < ?
             ORDER BY w.date DESC, el.id DESC
             LIMIT 1
-        """, (ex_name, workout_date))
+        """, (user_id, ex_name, workout_date))
         prev_ex = cur.fetchone()
 
         prev_stats = None
@@ -260,14 +429,15 @@ def get_workout_details(workout_row, conn):
 
     return {
         "id": workout_row["id"],
+        "user_id": user_id,
         "date": workout_row["date"],
         "title": workout_row["title"] or "",
         "notes": workout_row["notes"] or "",
         "exercises": exercises
     }
 
-def get_last_session_for_exercise_name(exercise_name, before_date=None, db_path=None):
-    """Returns the stats of the last time this exercise was performed."""
+def get_last_session_for_exercise_name(exercise_name, user_id=1, before_date=None, db_path=None):
+    """Returns the stats of the last time this exercise was performed by this user."""
     if db_path is None:
         db_path = DB_PATH
     with get_db(db_path) as conn:
@@ -276,9 +446,9 @@ def get_last_session_for_exercise_name(exercise_name, before_date=None, db_path=
             SELECT el.id, w.date, el.exercise_name, el.muscle_group
             FROM exercise_logs el
             JOIN workouts w ON el.workout_id = w.id
-            WHERE LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+            WHERE w.user_id = ? AND LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
         """
-        params = [exercise_name]
+        params = [user_id, exercise_name]
         if before_date:
             query += " AND w.date <= ?"
             params.append(before_date)
@@ -300,9 +470,9 @@ def get_last_session_for_exercise_name(exercise_name, before_date=None, db_path=
             "stats": stats
         }
 
-def get_weekly_analytics(week_start_date_str, db_path=None):
+def get_weekly_analytics(week_start_date_str, user_id=1, db_path=None):
     """
-    Computes weekly summary from Monday (week_start_date) to Sunday.
+    Computes weekly summary from Monday (week_start_date) to Sunday for this user.
     Compares exercises performed this week against their last previous session.
     """
     if db_path is None:
@@ -322,22 +492,22 @@ def get_weekly_analytics(week_start_date_str, db_path=None):
     with get_db(db_path) as conn:
         cur = conn.cursor()
 
-        # Workouts in this week
+        # Workouts in this week for this user
         cur.execute("""
             SELECT * FROM workouts 
-            WHERE date >= ? AND date <= ? 
+            WHERE user_id = ? AND date >= ? AND date <= ? 
             ORDER BY date ASC
-        """, (start_str, end_str))
+        """, (user_id, start_str, end_str))
         workout_rows = cur.fetchall()
 
         week_workouts = [get_workout_details(w, conn) for w in workout_rows]
 
-        # Previous week workouts for volume/reps delta
+        # Previous week workouts for volume/reps delta for this user
         cur.execute("""
             SELECT w.id, w.date 
             FROM workouts w 
-            WHERE w.date >= ? AND w.date <= ?
-        """, (prev_week_start, prev_week_end))
+            WHERE w.user_id = ? AND w.date >= ? AND w.date <= ?
+        """, (user_id, prev_week_start, prev_week_end))
         prev_workout_rows = cur.fetchall()
         
         prev_week_volume = 0.0
@@ -481,8 +651,8 @@ def get_weekly_analytics(week_start_date_str, db_path=None):
             "workouts": week_workouts
         }
 
-def get_exercise_all_history(exercise_name, db_path=None):
-    """Returns chronological timeline for a specific exercise."""
+def get_exercise_all_history(exercise_name, user_id=1, db_path=None):
+    """Returns chronological timeline for a specific exercise for this user."""
     if db_path is None:
         db_path = DB_PATH
     with get_db(db_path) as conn:
@@ -491,9 +661,9 @@ def get_exercise_all_history(exercise_name, db_path=None):
             SELECT el.id, w.date, el.notes, w.title as workout_title
             FROM exercise_logs el
             JOIN workouts w ON el.workout_id = w.id
-            WHERE LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+            WHERE w.user_id = ? AND LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
             ORDER BY w.date ASC, el.id ASC
-        """, (exercise_name,))
+        """, (user_id, exercise_name,))
         entries = cur.fetchall()
 
         history = []
