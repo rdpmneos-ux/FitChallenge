@@ -1,0 +1,521 @@
+import sqlite3
+import os
+from datetime import datetime, timedelta
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
+
+def get_db(db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+def init_db(db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    with get_db(db_path) as conn:
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS workouts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL UNIQUE, -- YYYY-MM-DD
+            title TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS exercise_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workout_id INTEGER NOT NULL,
+            exercise_name TEXT NOT NULL,
+            muscle_group TEXT DEFAULT 'General',
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS set_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exercise_log_id INTEGER NOT NULL,
+            set_number INTEGER NOT NULL,
+            reps INTEGER NOT NULL,
+            weight REAL DEFAULT 0,
+            rpe REAL,
+            FOREIGN KEY (exercise_log_id) REFERENCES exercise_logs(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_workouts_date ON workouts(date);
+        CREATE INDEX IF NOT EXISTS idx_exercise_name ON exercise_logs(exercise_name);
+        CREATE INDEX IF NOT EXISTS idx_exercise_workout ON exercise_logs(workout_id);
+        """)
+
+def compute_exercise_stats(sets):
+    """
+    Given a list of set dicts with 'reps' and 'weight', computes:
+    - total_sets
+    - total_reps
+    - max_weight
+    - total_volume (reps * weight, or reps if all weights are 0)
+    - avg_reps
+    - sets_formatted
+    """
+    if not sets:
+        return {
+            "total_sets": 0,
+            "total_reps": 0,
+            "max_weight": 0.0,
+            "total_volume": 0.0,
+            "avg_reps": 0.0,
+            "is_bodyweight": True,
+            "sets_formatted": "0 series"
+        }
+    
+    total_sets = len(sets)
+    total_reps = sum(s.get("reps", 0) for s in sets)
+    max_weight = max((float(s.get("weight", 0) or 0) for s in sets), default=0.0)
+    
+    has_weights = any(float(s.get("weight", 0) or 0) > 0 for s in sets)
+    if has_weights:
+        total_volume = sum((float(s.get("weight", 0) or 0) * int(s.get("reps", 0))) for s in sets)
+        is_bodyweight = False
+    else:
+        total_volume = float(total_reps)
+        is_bodyweight = True
+
+    avg_reps = round(total_reps / total_sets, 1) if total_sets > 0 else 0
+
+    return {
+        "total_sets": total_sets,
+        "total_reps": total_reps,
+        "max_weight": round(max_weight, 2),
+        "total_volume": round(total_volume, 1),
+        "avg_reps": avg_reps,
+        "is_bodyweight": is_bodyweight
+    }
+
+def compare_exercise_sessions(current_stats, previous_stats):
+    """
+    Compares current exercise session with previous session.
+    Returns status: 'mejora', 'mantenimiento', 'descenso', or 'nuevo'
+    and descriptive pills/text.
+    """
+    if not previous_stats:
+        return {
+            "status": "nuevo",
+            "badge_class": "bg-sky-500/10 text-sky-400 border-sky-500/20",
+            "icon": "sparkles",
+            "headline": "Línea base registrada",
+            "delta_volume_pct": 0,
+            "reps_diff": 0,
+            "weight_diff": 0,
+            "sets_diff": 0,
+            "summary": "Primera vez registrado. Servirá de referencia para tu próxima sesión."
+        }
+    
+    prev_vol = previous_stats["total_volume"]
+    curr_vol = current_stats["total_volume"]
+    reps_diff = current_stats["total_reps"] - previous_stats["total_reps"]
+    weight_diff = round(current_stats["max_weight"] - previous_stats["max_weight"], 2)
+    sets_diff = current_stats["total_sets"] - previous_stats["total_sets"]
+
+    # Calculate percentage change in volume
+    if prev_vol > 0:
+        vol_change_pct = round(((curr_vol - prev_vol) / prev_vol) * 100, 1)
+    else:
+        vol_change_pct = 0.0
+
+    # Decision logic
+    # Mejora:
+    # 1. Volume increased by at least 1.5%
+    # 2. Or Max weight increased with at least same/close total reps
+    # 3. Or Reps increased with same or higher weight
+    is_mejora = False
+    is_descenso = False
+
+    if vol_change_pct >= 1.5 or (weight_diff > 0 and reps_diff >= 0) or (reps_diff > 0 and weight_diff >= 0):
+        is_mejora = True
+    elif vol_change_pct <= -1.5 or reps_diff < 0 or weight_diff < -1:
+        is_descenso = True
+
+    details_parts = []
+    if weight_diff > 0:
+        details_parts.append(f"+{weight_diff} kg máx")
+    elif weight_diff < 0:
+        details_parts.append(f"{weight_diff} kg máx")
+
+    if reps_diff > 0:
+        details_parts.append(f"+{reps_diff} reps")
+    elif reps_diff < 0:
+        details_parts.append(f"{reps_diff} reps")
+
+    if sets_diff != 0:
+        details_parts.append(f"{'+' if sets_diff > 0 else ''}{sets_diff} series")
+
+    if not details_parts:
+        details_text = "Mismo rendimiento exacto"
+    else:
+        details_text = ", ".join(details_parts)
+
+    if is_mejora:
+        status = "mejora"
+        badge_class = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+        icon = "trending-up"
+        vol_str = f"+{vol_change_pct}%" if vol_change_pct > 0 else ""
+        headline = f"¡Mejora! {vol_str}".strip()
+        summary = f"Superaste la sesión anterior: {details_text}."
+    elif is_descenso:
+        status = "descenso"
+        badge_class = "bg-rose-500/10 text-rose-400 border-rose-500/30"
+        icon = "trending-down"
+        vol_str = f"{vol_change_pct}%"
+        headline = f"Descenso ({vol_str})"
+        summary = f"Menor rendimiento que la última vez: {details_text}."
+    else:
+        status = "mantenimiento"
+        badge_class = "bg-amber-500/10 text-amber-400 border-amber-500/30"
+        icon = "minus"
+        headline = "Mantenimiento"
+        summary = f"Mantuviste el estímulo: {details_text}."
+
+    return {
+        "status": status,
+        "badge_class": badge_class,
+        "icon": icon,
+        "headline": headline,
+        "delta_volume_pct": vol_change_pct,
+        "reps_diff": reps_diff,
+        "weight_diff": weight_diff,
+        "sets_diff": sets_diff,
+        "summary": summary
+    }
+
+def get_workout_details(workout_row, conn):
+    """Fetches all exercises and sets for a workout, enriched with previous comparisons."""
+    workout_id = workout_row["id"]
+    workout_date = workout_row["date"]
+
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM exercise_logs 
+        WHERE workout_id = ? 
+        ORDER BY id ASC
+    """, (workout_id,))
+    exercises_raw = cur.fetchall()
+
+    exercises = []
+    for ex in exercises_raw:
+        ex_id = ex["id"]
+        ex_name = ex["exercise_name"]
+
+        # Fetch sets
+        cur.execute("""
+            SELECT * FROM set_logs 
+            WHERE exercise_log_id = ? 
+            ORDER BY set_number ASC
+        """, (ex_id,))
+        sets_raw = [dict(s) for s in cur.fetchall()]
+        current_stats = compute_exercise_stats(sets_raw)
+
+        # Find the most recent previous exercise before this workout date
+        cur.execute("""
+            SELECT el.id, el.workout_id, w.date, el.exercise_name
+            FROM exercise_logs el
+            JOIN workouts w ON el.workout_id = w.id
+            WHERE LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+              AND w.date < ?
+            ORDER BY w.date DESC, el.id DESC
+            LIMIT 1
+        """, (ex_name, workout_date))
+        prev_ex = cur.fetchone()
+
+        prev_stats = None
+        prev_date = None
+        prev_sets = []
+
+        if prev_ex:
+            prev_date = prev_ex["date"]
+            cur.execute("""
+                SELECT * FROM set_logs 
+                WHERE exercise_log_id = ? 
+                ORDER BY set_number ASC
+            """, (prev_ex["id"],))
+            prev_sets = [dict(s) for s in cur.fetchall()]
+            prev_stats = compute_exercise_stats(prev_sets)
+
+        comparison = compare_exercise_sessions(current_stats, prev_stats)
+
+        exercises.append({
+            "id": ex["id"],
+            "exercise_name": ex["exercise_name"],
+            "muscle_group": ex["muscle_group"],
+            "notes": ex["notes"] or "",
+            "sets": sets_raw,
+            "stats": current_stats,
+            "previous_date": prev_date,
+            "previous_stats": prev_stats,
+            "previous_sets": prev_sets,
+            "comparison": comparison
+        })
+
+    return {
+        "id": workout_row["id"],
+        "date": workout_row["date"],
+        "title": workout_row["title"] or "",
+        "notes": workout_row["notes"] or "",
+        "exercises": exercises
+    }
+
+def get_last_session_for_exercise_name(exercise_name, before_date=None, db_path=None):
+    """Returns the stats of the last time this exercise was performed."""
+    if db_path is None:
+        db_path = DB_PATH
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        query = """
+            SELECT el.id, w.date, el.exercise_name, el.muscle_group
+            FROM exercise_logs el
+            JOIN workouts w ON el.workout_id = w.id
+            WHERE LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+        """
+        params = [exercise_name]
+        if before_date:
+            query += " AND w.date <= ?"
+            params.append(before_date)
+        
+        query += " ORDER BY w.date DESC, el.id DESC LIMIT 1"
+        cur.execute(query, params)
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        cur.execute("SELECT * FROM set_logs WHERE exercise_log_id = ? ORDER BY set_number ASC", (row["id"],))
+        sets = [dict(s) for s in cur.fetchall()]
+        stats = compute_exercise_stats(sets)
+        return {
+            "date": row["date"],
+            "exercise_name": row["exercise_name"],
+            "muscle_group": row["muscle_group"],
+            "sets": sets,
+            "stats": stats
+        }
+
+def get_weekly_analytics(week_start_date_str, db_path=None):
+    """
+    Computes weekly summary from Monday (week_start_date) to Sunday.
+    Compares exercises performed this week against their last previous session.
+    """
+    if db_path is None:
+        db_path = DB_PATH
+    start_dt = datetime.strptime(week_start_date_str, "%Y-%m-%d")
+    # Ensure start_dt is Monday of that week
+    start_dt = start_dt - timedelta(days=start_dt.weekday())
+    end_dt = start_dt + timedelta(days=6)
+
+    start_str = start_dt.strftime("%Y-%m-%d")
+    end_str = end_dt.strftime("%Y-%m-%d")
+
+    # Also compute previous week range for general totals comparison
+    prev_week_start = (start_dt - timedelta(days=7)).strftime("%Y-%m-%d")
+    prev_week_end = (start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+
+        # Workouts in this week
+        cur.execute("""
+            SELECT * FROM workouts 
+            WHERE date >= ? AND date <= ? 
+            ORDER BY date ASC
+        """, (start_str, end_str))
+        workout_rows = cur.fetchall()
+
+        week_workouts = [get_workout_details(w, conn) for w in workout_rows]
+
+        # Previous week workouts for volume/reps delta
+        cur.execute("""
+            SELECT w.id, w.date 
+            FROM workouts w 
+            WHERE w.date >= ? AND w.date <= ?
+        """, (prev_week_start, prev_week_end))
+        prev_workout_rows = cur.fetchall()
+        
+        prev_week_volume = 0.0
+        prev_week_reps = 0
+        prev_week_sets = 0
+        for pw in prev_workout_rows:
+            cur.execute("""
+                SELECT sl.reps, sl.weight 
+                FROM set_logs sl 
+                JOIN exercise_logs el ON sl.exercise_log_id = el.id
+                WHERE el.workout_id = ?
+            """, (pw["id"],))
+            p_sets = [dict(s) for s in cur.fetchall()]
+            stats = compute_exercise_stats(p_sets)
+            prev_week_volume += stats["total_volume"]
+            prev_week_reps += stats["total_reps"]
+            prev_week_sets += stats["total_sets"]
+
+        # Aggregate current week metrics
+        total_workouts = len(week_workouts)
+        total_sets = 0
+        total_reps = 0
+        total_volume = 0.0
+        
+        # Collect exercise comparisons
+        exercise_comparisons = []
+        improvements_count = 0
+        maintenance_count = 0
+        drops_count = 0
+        new_count = 0
+
+        # Day-by-day distribution
+        days_map = {}
+        for d in range(7):
+            day_date = (start_dt + timedelta(days=d)).strftime("%Y-%m-%d")
+            day_name = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][d]
+            days_map[day_date] = {
+                "date": day_date,
+                "day_name": day_name,
+                "workouts_count": 0,
+                "sets": 0,
+                "reps": 0,
+                "volume": 0.0,
+                "exercises": []
+            }
+
+        for w in week_workouts:
+            w_date = w["date"]
+            for ex in w["exercises"]:
+                stats = ex["stats"]
+                total_sets += stats["total_sets"]
+                total_reps += stats["total_reps"]
+                total_volume += stats["total_volume"]
+
+                comp = ex["comparison"]
+                status = comp["status"]
+                if status == "mejora":
+                    improvements_count += 1
+                elif status == "mantenimiento":
+                    maintenance_count += 1
+                elif status == "descenso":
+                    drops_count += 1
+                elif status == "nuevo":
+                    new_count += 1
+
+                exercise_comparisons.append({
+                    "workout_date": w_date,
+                    "exercise_name": ex["exercise_name"],
+                    "muscle_group": ex["muscle_group"],
+                    "stats": stats,
+                    "previous_date": ex["previous_date"],
+                    "previous_stats": ex["previous_stats"],
+                    "comparison": comp
+                })
+
+                if w_date in days_map:
+                    days_map[w_date]["workouts_count"] += 1
+                    days_map[w_date]["sets"] += stats["total_sets"]
+                    days_map[w_date]["reps"] += stats["total_reps"]
+                    days_map[w_date]["volume"] += stats["total_volume"]
+                    days_map[w_date]["exercises"].append(ex["exercise_name"])
+
+        # Weekly verdict calculation
+        total_evaluated = improvements_count + maintenance_count + drops_count
+        if total_evaluated == 0 and new_count > 0:
+            verdict = "Línea Base Establecida"
+            verdict_desc = f"Registraste {new_count} ejercicio(s) nuevos esta semana. ¡La próxima semana veremos tu progreso!"
+            verdict_badge = "bg-sky-500/20 text-sky-400 border-sky-500/30"
+            verdict_icon = "compass"
+        elif total_evaluated == 0:
+            verdict = "Sin Registros Aún"
+            verdict_desc = "No hay entrenamientos registrados para esta semana."
+            verdict_badge = "bg-slate-700/50 text-slate-400 border-slate-600/30"
+            verdict_icon = "calendar"
+        else:
+            improvement_ratio = improvements_count / total_evaluated
+            if improvement_ratio >= 0.5:
+                verdict = "¡Semana de Progreso y Sobrecarga!"
+                verdict_desc = f"Superaste tus marcas en {improvements_count} de {total_evaluated} ejercicios comparables ({round(improvement_ratio*100)}%)."
+                verdict_badge = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                verdict_icon = "flame"
+            elif (improvements_count + maintenance_count) / total_evaluated >= 0.7:
+                verdict = "Semana de Mantenimiento y Solidez"
+                verdict_desc = f"Consolidaste tus cargas ({maintenance_count} mantenimiento, {improvements_count} mejoras) manteniendo la consistencia."
+                verdict_badge = "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                verdict_icon = "shield-check"
+            else:
+                verdict = "Semana de Descarga o Adaptación"
+                verdict_desc = f"Hubo descensos en {drops_count} ejercicios. Puede ser momento de descanso o recuperación planificada."
+                verdict_badge = "bg-rose-500/20 text-rose-400 border-rose-500/30"
+                verdict_icon = "battery-charging"
+
+        # Delta vs previous week volume
+        vol_diff_pct = 0.0
+        if prev_week_volume > 0:
+            vol_diff_pct = round(((total_volume - prev_week_volume) / prev_week_volume) * 100, 1)
+
+        return {
+            "week_start": start_str,
+            "week_end": end_str,
+            "prev_week_start": prev_week_start,
+            "prev_week_end": prev_week_end,
+            "total_workouts": total_workouts,
+            "total_sets": total_sets,
+            "total_reps": total_reps,
+            "total_volume": round(total_volume, 1),
+            "prev_week_volume": round(prev_week_volume, 1),
+            "prev_week_sets": prev_week_sets,
+            "prev_week_reps": prev_week_reps,
+            "vol_diff_pct": vol_diff_pct,
+            "improvements_count": improvements_count,
+            "maintenance_count": maintenance_count,
+            "drops_count": drops_count,
+            "new_count": new_count,
+            "verdict": verdict,
+            "verdict_desc": verdict_desc,
+            "verdict_badge": verdict_badge,
+            "verdict_icon": verdict_icon,
+            "days_distribution": list(days_map.values()),
+            "exercise_comparisons": exercise_comparisons,
+            "workouts": week_workouts
+        }
+
+def get_exercise_all_history(exercise_name, db_path=None):
+    """Returns chronological timeline for a specific exercise."""
+    if db_path is None:
+        db_path = DB_PATH
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT el.id, w.date, el.notes, w.title as workout_title
+            FROM exercise_logs el
+            JOIN workouts w ON el.workout_id = w.id
+            WHERE LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+            ORDER BY w.date ASC, el.id ASC
+        """, (exercise_name,))
+        entries = cur.fetchall()
+
+        history = []
+        prev_stats = None
+        for row in entries:
+            cur.execute("""
+                SELECT * FROM set_logs 
+                WHERE exercise_log_id = ? 
+                ORDER BY set_number ASC
+            """, (row["id"],))
+            sets = [dict(s) for s in cur.fetchall()]
+            stats = compute_exercise_stats(sets)
+            comp = compare_exercise_sessions(stats, prev_stats)
+            history.append({
+                "exercise_log_id": row["id"],
+                "date": row["date"],
+                "workout_title": row["workout_title"],
+                "notes": row["notes"],
+                "sets": sets,
+                "stats": stats,
+                "comparison": comp
+            })
+            prev_stats = stats
+
+        return history
