@@ -404,13 +404,30 @@
                 
                 <!-- Exercise Selector & Group -->
                 <div>
-                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Nombre del Ejercicio</label>
-                    <div class="relative">
-                        <input type="text" id="modal-exercise-input" list="popular-exercises-datalist" 
-                            placeholder="Escribe o selecciona (ej. Press de Banca)" 
-                            oninput="onModalExerciseInput(this.value)"
-                            class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
-                        <datalist id="popular-exercises-datalist"></datalist>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                        <span>Nombre del Ejercicio</span>
+                        <span class="text-[10px] text-slate-500 font-normal">Toca la flecha para desplegar lista</span>
+                    </label>
+                    <div class="relative" id="exercise-dropdown-container">
+                        <div class="relative flex items-center">
+                            <input type="text" id="modal-exercise-input" 
+                                placeholder="Escribe o toca la flecha para elegir..." 
+                                autocomplete="off"
+                                onfocus="openExerciseDropdown()"
+                                oninput="onModalExerciseInput(this.value)"
+                                class="w-full bg-slate-800/90 border border-slate-700 rounded-xl pl-4 pr-11 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                            
+                            <button type="button" id="exercise-dropdown-toggle-btn" onclick="toggleExerciseDropdown(event)" 
+                                title="Desplegar lista de ejercicios"
+                                class="absolute right-1.5 p-2 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-700/60 transition flex items-center justify-center">
+                                <i data-lucide="chevron-down" id="exercise-dropdown-chevron" class="w-4 h-4 transition-transform duration-200"></i>
+                            </button>
+                        </div>
+
+                        <!-- Custom Dropdown Menu -->
+                        <div id="exercise-dropdown-menu" class="hidden absolute top-full left-0 right-0 mt-1.5 max-h-56 overflow-y-auto bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl z-50 divide-y divide-slate-800/60 backdrop-blur-md">
+                            <!-- Rendered dynamically via JS -->
+                        </div>
                     </div>
                 </div>
 

@@ -64,6 +64,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadWorkoutForDate(currentDate);
     renderWeekStrip();
     lucide.createIcons();
+
+    // Close exercise dropdown when clicking outside
+    document.addEventListener("click", (e) => {
+        const container = document.getElementById("exercise-dropdown-container");
+        if (container && !container.contains(e.target)) {
+            closeExerciseDropdown();
+        }
+    });
 });
 
 // Switch Top Tabs
@@ -416,6 +424,7 @@ function openAddExerciseModal() {
     document.getElementById("modal-exercise-notes").value = "";
     document.getElementById("modal-previous-session-banner").classList.add("hidden");
     lastFetchedPreviousSession = null;
+    closeExerciseDropdown();
 
     // Initialize 3 default sets
     currentModalSets = [
@@ -433,11 +442,102 @@ function openAddExerciseModal() {
 }
 
 function closeAddExerciseModal() {
+    closeExerciseDropdown();
     document.getElementById("add-exercise-modal").classList.add("hidden");
+}
+
+// Custom Exercise Dropdown Functions
+function renderExerciseDropdownItems(filterText = "") {
+    const menu = document.getElementById("exercise-dropdown-menu");
+    if (!menu) return;
+    menu.innerHTML = "";
+
+    const query = (filterText || "").trim().toLowerCase();
+    const filtered = query
+        ? popularExercises.filter(ex => ex.name.toLowerCase().includes(query) || (ex.muscle && ex.muscle.toLowerCase().includes(query)))
+        : popularExercises;
+
+    if (filtered.length === 0) {
+        menu.innerHTML = `
+            <div class="px-4 py-3 text-xs text-slate-500 text-center">
+                No hay coincidencias predefinidas.<br>
+                <span class="text-emerald-400 font-medium">Puedes escribir cualquier ejercicio personalizado.</span>
+            </div>
+        `;
+        return;
+    }
+
+    filtered.forEach(ex => {
+        const item = document.createElement("div");
+        item.className = "px-4 py-2.5 flex items-center justify-between hover:bg-slate-800/80 cursor-pointer transition active:bg-emerald-500/20";
+        item.onmousedown = (e) => {
+            e.preventDefault(); // Prevent input blur before click finishes
+            selectExerciseFromDropdown(ex.name, ex.muscle);
+        };
+        item.innerHTML = `
+            <span class="text-xs sm:text-sm font-semibold text-white">${escapeHtml(ex.name)}</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-emerald-400 border border-emerald-500/20 font-medium">${escapeHtml(ex.muscle)}</span>
+        `;
+        menu.appendChild(item);
+    });
+}
+
+function openExerciseDropdown() {
+    const menu = document.getElementById("exercise-dropdown-menu");
+    const chevron = document.getElementById("exercise-dropdown-chevron");
+    const input = document.getElementById("modal-exercise-input");
+    if (!menu) return;
+
+    renderExerciseDropdownItems(input ? input.value : "");
+    menu.classList.remove("hidden");
+    if (chevron) chevron.classList.add("rotate-180", "text-emerald-400");
+}
+
+function closeExerciseDropdown() {
+    const menu = document.getElementById("exercise-dropdown-menu");
+    const chevron = document.getElementById("exercise-dropdown-chevron");
+    if (menu) menu.classList.add("hidden");
+    if (chevron) chevron.classList.remove("rotate-180", "text-emerald-400");
+}
+
+function toggleExerciseDropdown(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const menu = document.getElementById("exercise-dropdown-menu");
+    if (menu && !menu.classList.contains("hidden")) {
+        closeExerciseDropdown();
+    } else {
+        openExerciseDropdown();
+    }
+}
+
+function selectExerciseFromDropdown(name, muscle) {
+    const input = document.getElementById("modal-exercise-input");
+    if (input) input.value = name;
+
+    const select = document.getElementById("modal-muscle-select");
+    if (select && muscle) {
+        for (let opt of select.options) {
+            if (opt.value.toLowerCase().includes(muscle.toLowerCase()) || muscle.toLowerCase().includes(opt.value.toLowerCase())) {
+                select.value = opt.value;
+                break;
+            }
+        }
+    }
+
+    closeExerciseDropdown();
+    onModalExerciseInput(name);
 }
 
 let inputDebounceTimer = null;
 function onModalExerciseInput(val) {
+    renderExerciseDropdownItems(val);
+    const menu = document.getElementById("exercise-dropdown-menu");
+    if (menu && menu.classList.contains("hidden") && val) {
+        openExerciseDropdown();
+    }
     clearTimeout(inputDebounceTimer);
     inputDebounceTimer = setTimeout(async () => {
         const name = val.trim();
