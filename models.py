@@ -1,12 +1,194 @@
 import sqlite3
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
+try:
+    import psycopg2
+    import psycopg2.extras
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+
 DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
 
+def get_database_url():
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return url or None
+
+class PostgresCursorWrapper:
+    def __init__(self, pg_cursor):
+        self.cur = pg_cursor
+        self._last_id = None
+
+    def execute(self, query, params=None):
+        converted_query = re.sub(r'\?', '%s', query)
+        if converted_query.strip().upper().startswith("PRAGMA"):
+            return self
+
+        is_insert = converted_query.strip().upper().startswith("INSERT INTO")
+        has_returning = "RETURNING" in converted_query.upper()
+        if is_insert and not has_returning:
+            converted_query += " RETURNING id"
+
+        if params is not None:
+            self.cur.execute(converted_query, params)
+        else:
+            self.cur.execute(converted_query)
+
+        if is_insert:
+            try:
+                row = self.cur.fetchone()
+                if row:
+                    if isinstance(row, dict) and "id" in row:
+                        self._last_id = row["id"]
+                    elif hasattr(row, "__getitem__"):
+                        self._last_id = row[0]
+            except Exception:
+                pass
+        return self
+
+    def executemany(self, query, params_list):
+        converted_query = re.sub(r'\?', '%s', query)
+        return self.cur.executemany(converted_query, params_list)
+
+    def fetchone(self):
+        return self.cur.fetchone()
+
+    def fetchall(self):
+        return self.cur.fetchall()
+
+    @property
+    def lastrowid(self):
+        return self._last_id
+
+    def __iter__(self):
+        return iter(self.cur)
+
+class PostgresConnectionWrapper:
+    def __init__(self, pg_conn):
+        self.conn = pg_conn
+
+    def cursor(self):
+        return PostgresCursorWrapper(self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor))
+
+    def execute(self, query, params=None):
+        cur = self.cursor()
+        cur.execute(query, params)
+        return cur
+
+    def executescript(self, script):
+        with self.conn.cursor() as cur:
+            cur.execute(script)
+        self.conn.commit()
+
+    def commit(self):
+        self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def close(self):
+        self.conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self.rollback()
+        else:
+            self.commit()
+        self.close()
+
+def init_postgres_db(db_url):
+    import seed_data
+    with psycopg2.connect(db_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                name VARCHAR(100),
+                email VARCHAR(150) UNIQUE,
+                recovery_question TEXT,
+                recovery_answer_hash TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                token VARCHAR(100) PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS workouts (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                date VARCHAR(20) NOT NULL,
+                title TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, date)
+            );
+
+            CREATE TABLE IF NOT EXISTS exercise_logs (
+                id SERIAL PRIMARY KEY,
+                workout_id INTEGER NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+                exercise_name VARCHAR(100) NOT NULL,
+                muscle_group VARCHAR(50),
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS set_logs (
+                id SERIAL PRIMARY KEY,
+                exercise_log_id INTEGER NOT NULL REFERENCES exercise_logs(id) ON DELETE CASCADE,
+                set_number INTEGER NOT NULL,
+                reps INTEGER NOT NULL,
+                weight NUMERIC NOT NULL,
+                rpe NUMERIC,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS password_resets (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                reset_code VARCHAR(20) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                used INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS popular_exercises (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL UNIQUE,
+                muscle_group VARCHAR(50) NOT NULL
+            );
+            """)
+
+            cur.execute("SELECT COUNT(*) FROM popular_exercises")
+            count = cur.fetchone()[0]
+            if count == 0:
+                for item in seed_data.DEFAULT_POPULAR_EXERCISES:
+                    cur.execute(
+                        "INSERT INTO popular_exercises (name, muscle_group) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
+                        (item["name"], item["muscle_group"])
+                    )
+        conn.commit()
+
 def get_db(db_path=None):
+    db_url = get_database_url()
+    if db_url and PSYCOPG2_AVAILABLE and db_path is None:
+        conn = psycopg2.connect(db_url)
+        return PostgresConnectionWrapper(conn)
+
     if db_path is None:
         db_path = DB_PATH
     conn = sqlite3.connect(db_path)
@@ -15,8 +197,11 @@ def get_db(db_path=None):
     return conn
 
 def init_db(db_path=None):
-    if db_path is None:
-        db_path = DB_PATH
+    db_url = get_database_url()
+    if db_url and PSYCOPG2_AVAILABLE and db_path is None:
+        init_postgres_db(db_url)
+        return
+
     with get_db(db_path) as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS users (
