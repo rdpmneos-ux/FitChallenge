@@ -1237,17 +1237,72 @@ function onModalExerciseInput(val) {
                 const dateFmt = `${dObj.getDate()} de ${MONTH_NAMES_ES[dObj.getMonth()]}`;
                 const st = lastSession.stats;
                 const weightPart = st.max_weight > 0 ? ` con hasta ${st.max_weight} kg` : " (peso corporal)";
-                summary.innerHTML = `<strong>${dateFmt}</strong>: ${st.total_sets} series, ${st.total_reps} reps totales${weightPart}. <br><span class="text-emerald-400 font-semibold">¡Supera estas marcas hoy para progresar!</span>`;
+                summary.innerHTML = `<strong>${dateFmt}</strong>: ${st.total_sets} series, ${st.total_reps} reps totales${weightPart}.`;
                 banner.classList.remove("hidden");
+
+                // Fetch AI Progressive Overload Recommendation
+                fetchAiProgressiveOverload(name);
                 lucide.createIcons();
             } else {
                 banner.classList.add("hidden");
                 lastFetchedPreviousSession = null;
+                currentAiSuggestedSets = null;
+                const overloadCard = document.getElementById("modal-ai-overload-card");
+                if (overloadCard) overloadCard.classList.add("hidden");
             }
         } catch (e) {
             console.error("Error al buscar última sesión:", e);
         }
     }, 300);
+}
+
+let currentAiSuggestedSets = null;
+
+async function fetchAiProgressiveOverload(exerciseName) {
+    const card = document.getElementById("modal-ai-overload-card");
+    const summary = document.getElementById("modal-ai-overload-summary");
+    const tip = document.getElementById("modal-ai-overload-tip");
+    if (!card || !summary) return;
+
+    const muscleSelect = document.getElementById("modal-muscle-select");
+    const muscle = muscleSelect ? muscleSelect.value : "General";
+
+    summary.textContent = "Calculando sobrecarga progresiva...";
+    if (tip) tip.textContent = "";
+    card.classList.remove("hidden");
+
+    try {
+        const res = await authFetch("/api/ai/progressive_overload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                exercise_name: exerciseName,
+                muscle_group: muscle,
+                before_date: currentDate
+            })
+        });
+        const data = await res.json();
+        if (data.status === "ok" && data.target) {
+            summary.textContent = data.target.summary;
+            if (tip) tip.textContent = (data.target.explanation || "") + " " + (data.target.scientific_tip ? "💡 " + data.target.scientific_tip : "");
+            currentAiSuggestedSets = data.target.suggested_sets;
+        } else {
+            card.classList.add("hidden");
+        }
+    } catch (e) {
+        console.error("Error fetching AI overload:", e);
+        card.classList.add("hidden");
+    }
+}
+
+function applyAiOverloadSuggestion() {
+    if (!currentAiSuggestedSets || currentAiSuggestedSets.length === 0) return;
+    currentModalSets = currentAiSuggestedSets.map(s => ({
+        reps: s.reps,
+        weight: s.weight
+    }));
+    renderModalSetRows();
+    showToast("🎯 Objetivo de sobrecarga progresiva cargado.");
 }
 
 function copyPreviousSetsToModal() {
@@ -1257,7 +1312,7 @@ function copyPreviousSetsToModal() {
         weight: s.weight
     }));
     renderModalSetRows();
-    showToast("Series anteriores copiadas. ¡Añade 1 rep o sube peso!");
+    showToast("Series anteriores copiadas.");
 }
 
 function renderModalSetRows() {
@@ -1353,7 +1408,16 @@ async function submitAddExercise() {
         renderExercisesList(currentWorkout.exercises || []);
         renderWeekStrip();
         fetchPopularExercises();
-        showToast("¡Ejercicio guardado exitosamente!");
+
+        if (data.feedback) {
+            if (data.feedback.achieved) {
+                showToast(data.feedback.message);
+            } else {
+                openMotivationalModal(data.feedback.message);
+            }
+        } else {
+            showToast("¡Ejercicio guardado exitosamente!");
+        }
     } catch (e) {
         console.error("Error al guardar ejercicio:", e);
         alert("Ocurrió un error al guardar el ejercicio.");
@@ -2175,4 +2239,239 @@ function openRestTimerModal() {
 
 function closeRestTimerModal() {
     document.getElementById("rest-timer-modal").classList.add("hidden");
+}
+
+// ==========================================
+// FITCOACH IA CHAT & ROUTINES LOGIC
+// ==========================================
+
+let aiChatHistory = [];
+let isAiSending = false;
+
+function getStoredGeminiKey() {
+    return localStorage.getItem("fitchallenge_gemini_key") || "";
+}
+
+function toggleAiKeySettings() {
+    const panel = document.getElementById("ai-key-settings-panel");
+    if (!panel) return;
+    panel.classList.toggle("hidden");
+    const input = document.getElementById("gemini-api-key-input");
+    if (input) input.value = getStoredGeminiKey();
+}
+
+function saveGeminiApiKey() {
+    const input = document.getElementById("gemini-api-key-input");
+    if (!input) return;
+    const key = input.value.trim();
+    if (key) {
+        localStorage.setItem("fitchallenge_gemini_key", key);
+        showToast("Clave de Gemini guardada correctamente");
+    } else {
+        localStorage.removeItem("fitchallenge_gemini_key");
+        showToast("Clave eliminada. Se usará el modo local.");
+    }
+    document.getElementById("ai-key-settings-panel").classList.add("hidden");
+}
+
+function openAiCoachModal() {
+    const modal = document.getElementById("ai-coach-modal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    
+    // Initialize welcome message if empty
+    if (aiChatHistory.length === 0) {
+        const userName = currentAuthUser ? (currentAuthUser.name || currentAuthUser.username) : "Atleta";
+        aiChatHistory.push({
+            role: "model",
+            content: `¡Hola **${userName}**! Soy tu **FitCoach IA**. 💪\n\nEstoy listo para guiarte en tu sobrecarga progresiva, resolver dudas sobre técnicas o descansos, o crearte una rutina completa para hoy.\n\n¿En qué te puedo ayudar?`
+        });
+        renderAiMessages();
+    }
+    lucide.createIcons();
+    setTimeout(() => {
+        const input = document.getElementById("ai-chat-input");
+        if (input) input.focus();
+    }, 150);
+}
+
+function closeAiCoachModal() {
+    const modal = document.getElementById("ai-coach-modal");
+    if (modal) modal.classList.add("hidden");
+}
+
+function renderAiMessages() {
+    const container = document.getElementById("ai-chat-messages");
+    if (!container) return;
+    container.innerHTML = "";
+
+    aiChatHistory.forEach((msg, idx) => {
+        const isUser = msg.role === "user";
+        const row = document.createElement("div");
+        row.className = `flex ${isUser ? "justify-end" : "justify-start"} items-start gap-2.5`;
+
+        const bubble = document.createElement("div");
+        bubble.className = isUser
+            ? "max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tr-none px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-xs sm:text-sm font-medium shadow-md shadow-emerald-500/10"
+            : "max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tl-none px-4 py-2.5 bg-slate-800/90 border border-slate-700/60 text-slate-100 text-xs sm:text-sm leading-relaxed shadow-md";
+
+        // Markdown formatting (bold, italics, linebreaks, lists)
+        let formatted = escapeHtml(msg.content)
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/```json routine[\s\S]*?```/gi, '') // Hide raw json block from bubble text
+            .replace(/\n\n/g, '<br><br>')
+            .replace(/\n/g, '<br>');
+
+        bubble.innerHTML = formatted;
+
+        // If routine is attached to this message, show interactive "Cargar a mi día" button
+        if (msg.suggested_routine && Array.isArray(msg.suggested_routine) && msg.suggested_routine.length > 0) {
+            const routineCard = document.createElement("div");
+            routineCard.className = "mt-3 pt-2.5 border-t border-slate-700/80 space-y-2";
+            routineCard.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-bold text-amber-300">🏋️ ${msg.suggested_routine.length} ejercicios propuestos</span>
+                    <button type="button" onclick="applyRoutineFromAi(${idx})" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md transition flex items-center gap-1">
+                        <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                        <span>Cargar a mi día</span>
+                    </button>
+                </div>
+            `;
+            bubble.appendChild(routineCard);
+        }
+
+        row.appendChild(bubble);
+        container.appendChild(row);
+    });
+
+    lucide.createIcons();
+    container.scrollTop = container.scrollHeight;
+}
+
+async function sendAiMessage() {
+    const input = document.getElementById("ai-chat-input");
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text || isAiSending) return;
+
+    input.value = "";
+    isAiSending = true;
+
+    // Add user message to history
+    aiChatHistory.push({ role: "user", content: text });
+    renderAiMessages();
+
+    // Show thinking indicator
+    const container = document.getElementById("ai-chat-messages");
+    const thinkingRow = document.createElement("div");
+    thinkingRow.id = "ai-thinking-row";
+    thinkingRow.className = "flex justify-start items-center gap-2 text-slate-400 text-xs italic px-3 py-1";
+    thinkingRow.innerHTML = `
+        <span class="w-2 h-2 rounded-full bg-indigo-400 animate-ping"></span>
+        <span>FitCoach está analizando...</span>
+    `;
+    container.appendChild(thinkingRow);
+    container.scrollTop = container.scrollHeight;
+
+    const apiKey = getStoredGeminiKey();
+    const headers = { "Content-Type": "application/json" };
+    if (apiKey) headers["X-Gemini-Key"] = apiKey;
+
+    try {
+        const res = await authFetch("/api/ai/coach/chat", {
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify({
+                message: text,
+                history: aiChatHistory.slice(0, -1)
+            })
+        });
+
+        const data = await res.json();
+        const thinking = document.getElementById("ai-thinking-row");
+        if (thinking) thinking.remove();
+
+        if (data.status === "ok" && data.reply) {
+            aiChatHistory.push({
+                role: "model",
+                content: data.reply,
+                suggested_routine: data.suggested_routine
+            });
+        } else {
+            aiChatHistory.push({
+                role: "model",
+                content: "Lo siento, tuve un pequeño problema al procesar tu mensaje. Por favor intenta de nuevo."
+            });
+        }
+    } catch (e) {
+        console.error("AI Coach error:", e);
+        const thinking = document.getElementById("ai-thinking-row");
+        if (thinking) thinking.remove();
+        aiChatHistory.push({
+            role: "model",
+            content: "No se pudo conectar con el servicio de IA. Revisa tu conexión a internet o intenta en unos momentos."
+        });
+    } finally {
+        isAiSending = false;
+        renderAiMessages();
+    }
+}
+
+function sendQuickPrompt(promptText) {
+    const input = document.getElementById("ai-chat-input");
+    if (input) {
+        input.value = promptText;
+        sendAiMessage();
+    }
+}
+
+async function applyRoutineFromAi(messageIndex) {
+    const msg = aiChatHistory[messageIndex];
+    if (!msg || !msg.suggested_routine) return;
+
+    if (!confirm(`¿Deseas agregar estos ${msg.suggested_routine.length} ejercicios sugeridos a tu sesión de hoy (${currentDate})?`)) return;
+
+    try {
+        const res = await authFetch("/api/ai/apply_routine", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                date: currentDate,
+                exercises: msg.suggested_routine
+            })
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            currentWorkout = data.workout;
+            renderExercisesList(currentWorkout.exercises || []);
+            renderWeekStrip();
+            fetchPopularExercises();
+            closeAiCoachModal();
+            showToast("¡Rutina cargada a tu día de hoy!");
+        } else {
+            alert(data.error || "No se pudo aplicar la rutina.");
+        }
+    } catch (e) {
+        console.error("Error applying routine:", e);
+        alert("Error de red al aplicar la rutina.");
+    }
+}
+
+// ==========================================
+// MOTIVATIONAL MODAL LOGIC
+// ==========================================
+
+function openMotivationalModal(message) {
+    const modal = document.getElementById("motivational-modal");
+    const msgEl = document.getElementById("motivational-modal-msg");
+    if (!modal || !msgEl) return;
+    msgEl.textContent = message || "¡El progreso no es lineal! La constancia es lo que construye músculo real. ¡A por la próxima!";
+    modal.classList.remove("hidden");
+    lucide.createIcons();
+}
+
+function closeMotivationalModal() {
+    const modal = document.getElementById("motivational-modal");
+    if (modal) modal.classList.add("hidden");
 }

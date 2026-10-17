@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_file
 import models
 import seed_data
+import ai_coach
 
 app = Flask(__name__)
 # Restrict request payload size to 1MB to prevent memory exhaustion / DoS
@@ -568,11 +569,37 @@ def add_exercise():
 
         conn.commit()
 
+        # Check previous session before date_str for motivational evaluation
+        feedback = {"achieved": True, "message": "¡Ejercicio registrado correctamente!"}
+        try:
+            cur.execute("""
+                SELECT el.id, w.date
+                FROM exercise_logs el
+                JOIN workouts w ON el.workout_id = w.id
+                WHERE w.user_id = ? AND LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+                  AND w.date < ?
+                ORDER BY w.date DESC, el.id DESC
+                LIMIT 1
+            """, (user["id"], exercise_name, date_str))
+            prev_row = cur.fetchone()
+            if prev_row:
+                cur.execute("""
+                    SELECT set_number, reps, weight, rpe 
+                    FROM set_logs 
+                    WHERE exercise_log_id = ? 
+                    ORDER BY set_number ASC
+                """, (prev_row["id"],))
+                prev_sets = [dict(r) for r in cur.fetchall()]
+                achieved, msg = ai_coach.evaluate_performance(sets, prev_sets, exercise_name)
+                feedback = {"achieved": achieved, "message": msg}
+        except Exception as eval_err:
+            print("AI Evaluation notice:", eval_err)
+
         # Return full updated workout
         cur.execute("SELECT * FROM workouts WHERE id = ?", (workout_id,))
         row = cur.fetchone()
         workout_data = models.get_workout_details(row, conn)
-        return jsonify({"workout": workout_data})
+        return jsonify({"workout": workout_data, "feedback": feedback})
 
 @app.route("/api/exercise/<int:exercise_id>", methods=["DELETE"])
 def delete_exercise(exercise_id):
@@ -764,6 +791,200 @@ def api_admin_db_export(table_name):
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+# ==========================================
+# AI COACH & PROGRESSIVE OVERLOAD ENDPOINTS
+# ==========================================
+
+@app.route("/api/ai/progressive_overload", methods=["POST"])
+def api_ai_progressive_overload():
+    user, err = require_auth()
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    exercise_name = sanitize_str(data.get("exercise_name", ""), max_len=80)
+    muscle_group = sanitize_str(data.get("muscle_group", "General"), max_len=40)
+    before_date = validate_date(data.get("before_date")) or datetime.now().strftime("%Y-%m-%d")
+
+    if not exercise_name:
+        return jsonify({"error": "Nombre de ejercicio requerido"}), 400
+
+    last_sets = []
+    last_row = None
+    with models.get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT el.id, w.date
+            FROM exercise_logs el
+            JOIN workouts w ON el.workout_id = w.id
+            WHERE w.user_id = ? AND LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+              AND w.date < ?
+            ORDER BY w.date DESC, el.id DESC
+            LIMIT 1
+        """, (user["id"], exercise_name, before_date))
+        last_row = cur.fetchone()
+        if last_row:
+            cur.execute("""
+                SELECT set_number, reps, weight, rpe 
+                FROM set_logs 
+                WHERE exercise_log_id = ? 
+                ORDER BY set_number ASC
+            """, (last_row["id"],))
+            last_sets = [dict(s) for s in cur.fetchall()]
+
+    overload_target = ai_coach.calculate_progressive_overload(exercise_name, muscle_group, last_sets)
+    return jsonify({
+        "status": "ok",
+        "exercise_name": exercise_name,
+        "muscle_group": muscle_group,
+        "last_date": last_row["date"] if last_row else None,
+        "target": overload_target
+    })
+
+@app.route("/api/ai/coach/chat", methods=["POST"])
+def api_ai_coach_chat():
+    user, err = require_auth()
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    message = sanitize_str(data.get("message", ""), max_len=1500)
+    history = data.get("history", [])
+    client_api_key = request.headers.get("X-Gemini-Key") or data.get("api_key")
+    api_key = ai_coach.get_gemini_api_key(client_api_key)
+
+    if not message:
+        return jsonify({"error": "Mensaje requerido"}), 400
+
+    # Collect user's recent workouts summary for context
+    recent_workouts = []
+    with models.get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT w.date, w.title, el.exercise_name, el.muscle_group, sl.reps, sl.weight
+            FROM workouts w
+            LEFT JOIN exercise_logs el ON el.workout_id = w.id
+            LEFT JOIN set_logs sl ON sl.exercise_log_id = el.id
+            WHERE w.user_id = ?
+            ORDER BY w.date DESC, el.id ASC, sl.set_number ASC
+            LIMIT 80
+        """, (user["id"],))
+        rows = cur.fetchall()
+        by_date = defaultdict(list)
+        for r in rows:
+            if r["exercise_name"]:
+                by_date[r["date"]].append(f"{r['exercise_name']} ({r['muscle_group']}): {r['weight']}kg x {r['reps']} reps")
+        for d, items in list(by_date.items())[:5]:
+            recent_workouts.append(f"Sesión {d}: " + "; ".join(items[:4]))
+
+    user_context = {
+        "name": user.get("name") or user.get("username", "Atleta"),
+        "recent_workouts": recent_workouts
+    }
+
+    system_prompt = f"""Eres FitCoach IA, el entrenador personal experto de FitChallenge.
+Tu alumno se llama {user_context['name']}.
+Fecha de hoy: {datetime.now().strftime('%Y-%m-%d')}.
+Historial reciente de entrenamientos:
+{chr(10).join(recent_workouts) if recent_workouts else 'Sin sesiones registradas todavía.'}
+
+Reglas clave:
+1. Especialista en SOBRECARGA PROGRESIVA (modelo de doble progresión).
+2. Si el usuario te cuenta que no levantó lo que esperaba o falló repeticiones, sé empático y motívalo con un mensaje corto y positivo recordándole que el progreso no es lineal.
+3. Respuestas concisas, útiles y con formato Markdown.
+4. Si sugieres o creas una rutina para hoy, incluye al final de tu mensaje este bloque exacto de JSON para que la app agregue un botón interactivo de un clic:
+```json routine
+[
+  {{"name": "Sentadilla con Barra", "muscle": "Piernas", "sets": 3, "target_reps": 10, "weight": 60.0}}
+]
+```
+Los grupos musculares permitidos son: Piernas, Pecho, Espalda, Hombros, Brazos, Core.
+"""
+
+    has_gemini = bool(api_key)
+    reply_text = None
+    if has_gemini:
+        reply_text, api_err = ai_coach.query_gemini_api(api_key, system_prompt, message, history)
+        if api_err:
+            print("Gemini API notice:", api_err)
+
+    if not reply_text:
+        # High-quality sports science local fallback
+        reply_text = ai_coach.generate_local_coach_response(message, user_context)
+
+    # Check for routine JSON block in the reply
+    suggested_routine = None
+    m = re.search(r'```json\s*routine\s*([\s\S]*?)```', reply_text, re.IGNORECASE)
+    if m:
+        try:
+            suggested_routine = json.loads(m.group(1).strip())
+        except Exception:
+            suggested_routine = None
+
+    return jsonify({
+        "status": "ok",
+        "reply": reply_text,
+        "has_gemini": has_gemini,
+        "suggested_routine": suggested_routine
+    })
+
+@app.route("/api/ai/apply_routine", methods=["POST"])
+def api_ai_apply_routine():
+    user, err = require_auth()
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    date_str = validate_date(data.get("date")) or datetime.now().strftime("%Y-%m-%d")
+    exercises = data.get("exercises", [])
+
+    if not exercises or not isinstance(exercises, list):
+        return jsonify({"error": "Lista de ejercicios requerida"}), 400
+
+    with models.get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO workouts (user_id, date, title, notes)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id, date) DO UPDATE SET title = excluded.title
+        """, (user["id"], date_str, f"Rutina IA ({date_str})", "Cargada por FitCoach IA"))
+
+        cur.execute("SELECT id FROM workouts WHERE user_id = ? AND date = ?", (user["id"], date_str))
+        workout_id = cur.fetchone()["id"]
+
+        for ex in exercises[:15]:
+            ex_name = sanitize_str(ex.get("name", ""), max_len=80)
+            ex_muscle = sanitize_str(ex.get("muscle", "General"), max_len=40)
+            if not ex_name:
+                continue
+
+            cur.execute("""
+                INSERT INTO exercise_logs (workout_id, exercise_name, muscle_group, notes)
+                VALUES (?, ?, ?, ?)
+            """, (workout_id, ex_name, ex_muscle, "Sugerido por FitCoach IA"))
+            ex_log_id = cur.lastrowid
+
+            num_sets = max(1, min(int(ex.get("sets", 3) or 3), 10))
+            t_reps = max(1, min(int(ex.get("target_reps", 10) or 10), 100))
+            t_weight = max(0.0, min(float(ex.get("weight", 0) or 0), 1000.0))
+
+            for s_idx in range(1, num_sets + 1):
+                cur.execute("""
+                    INSERT INTO set_logs (exercise_log_id, set_number, reps, weight, rpe)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (ex_log_id, s_idx, t_reps, t_weight, None))
+
+        conn.commit()
+
+        cur.execute("SELECT * FROM workouts WHERE id = ?", (workout_id,))
+        row = cur.fetchone()
+        workout_data = models.get_workout_details(row, conn)
+        return jsonify({
+            "status": "ok",
+            "workout": workout_data,
+            "message": f"¡{len(exercises)} ejercicios cargados con éxito a la sesión!"
+        })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

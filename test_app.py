@@ -484,6 +484,80 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         res_export = self.client.get("/api/admin/db/export/users?format=json")
         self.assertEqual(res_export.status_code, 200)
 
+    def test_ai_coach_and_progressive_overload(self):
+        # 1. Register and get token
+        token, user = self.register_and_get_token("aiuser", "password123", "AI Tester")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 2. Add an initial exercise log for Sentadilla Hack (Hacka)
+        res_add1 = self.client.post("/api/exercise", headers=headers, json={
+            "date": "2026-10-10",
+            "exercise_name": "Sentadilla Hack (Hacka)",
+            "muscle_group": "Piernas",
+            "sets": [
+                {"reps": 12, "weight": 80.0},
+                {"reps": 12, "weight": 80.0},
+                {"reps": 12, "weight": 80.0}
+            ]
+        })
+        self.assertEqual(res_add1.status_code, 200)
+        data1 = json.loads(res_add1.data)
+        self.assertIn("feedback", data1)
+        self.assertTrue(data1["feedback"]["achieved"])
+
+        # 3. Query Progressive Overload for today
+        res_po = self.client.post("/api/ai/progressive_overload", headers=headers, json={
+            "exercise_name": "Sentadilla Hack (Hacka)",
+            "muscle_group": "Piernas",
+            "before_date": "2026-10-17"
+        })
+        self.assertEqual(res_po.status_code, 200)
+        po_data = json.loads(res_po.data)
+        self.assertEqual(po_data["status"], "ok")
+        self.assertEqual(po_data["last_date"], "2026-10-10")
+        # Since user hit 12 reps on all sets, target should recommend weight increase
+        self.assertEqual(po_data["target"]["type"], "increase_weight")
+        self.assertGreater(po_data["target"]["suggested_sets"][0]["weight"], 80.0)
+
+        # 4. Add second session with missed reps to verify motivational feedback
+        res_add2 = self.client.post("/api/exercise", headers=headers, json={
+            "date": "2026-10-17",
+            "exercise_name": "Sentadilla Hack (Hacka)",
+            "muscle_group": "Piernas",
+            "sets": [
+                {"reps": 6, "weight": 70.0},
+                {"reps": 6, "weight": 70.0}
+            ]
+        })
+        self.assertEqual(res_add2.status_code, 200)
+        data2 = json.loads(res_add2.data)
+        self.assertIn("feedback", data2)
+        # Should detect missed reps and return a motivational message
+        self.assertFalse(data2["feedback"]["achieved"])
+        self.assertTrue(len(data2["feedback"]["message"]) > 10)
+
+        # 5. Test AI Coach Chat
+        res_chat = self.client.post("/api/ai/coach/chat", headers=headers, json={
+            "message": "¿Cómo aplico sobrecarga progresiva en sentadilla hack?"
+        })
+        self.assertEqual(res_chat.status_code, 200)
+        chat_data = json.loads(res_chat.data)
+        self.assertEqual(chat_data["status"], "ok")
+        self.assertTrue(len(chat_data["reply"]) > 20)
+
+        # 6. Test Apply Routine
+        res_routine = self.client.post("/api/ai/apply_routine", headers=headers, json={
+            "date": "2026-10-18",
+            "exercises": [
+                {"name": "Sentadilla con Barra", "muscle": "Piernas", "sets": 3, "target_reps": 10, "weight": 60.0},
+                {"name": "Extensiones de Cuádriceps", "muscle": "Piernas", "sets": 3, "target_reps": 12, "weight": 40.0}
+            ]
+        })
+        self.assertEqual(res_routine.status_code, 200)
+        routine_data = json.loads(res_routine.data)
+        self.assertEqual(routine_data["status"], "ok")
+        self.assertEqual(len(routine_data["workout"]["exercises"]), 2)
+
 if __name__ == "__main__":
     unittest.main()
 
