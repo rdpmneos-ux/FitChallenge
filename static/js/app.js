@@ -66,7 +66,6 @@ function setAuthTab(tab) {
     const regTabBtn = document.getElementById("auth-tab-register");
     const recoverTabBtn = document.getElementById("auth-tab-recover");
     const authForm = document.getElementById("auth-form");
-    const googleSection = document.getElementById("auth-google-section");
     const recoverSection = document.getElementById("auth-recover-section");
     const nameContainer = document.getElementById("auth-name-container");
     const emailContainer = document.getElementById("auth-email-container");
@@ -87,13 +86,11 @@ function setAuthTab(tab) {
             recoverTabBtn.className = "flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold transition shadow-sm";
         }
         if (authForm) authForm.classList.add("hidden");
-        if (googleSection) googleSection.classList.add("hidden");
         if (recoverSection) recoverSection.classList.remove("hidden");
         resetRecoverStep();
     } else {
         if (recoverTabBtn) recoverTabBtn.classList.add("hidden");
         if (authForm) authForm.classList.remove("hidden");
-        if (googleSection) googleSection.classList.remove("hidden");
         if (recoverSection) recoverSection.classList.add("hidden");
 
         if (tab === 'login') {
@@ -104,9 +101,9 @@ function setAuthTab(tab) {
             if (recoveryContainer) recoveryContainer.classList.add("hidden");
             if (forgotLink) forgotLink.classList.remove("hidden");
             if (usernameHint) usernameHint.classList.add("hidden");
-            if (usernameLabel) usernameLabel.textContent = "Usuario o Gmail";
+            if (usernameLabel) usernameLabel.textContent = "Usuario o Correo";
             if (usernameInput) {
-                usernameInput.placeholder = "Tu usuario o tu@gmail.com";
+                usernameInput.placeholder = "Tu usuario o correo registrado";
                 usernameInput.removeAttribute("minlength");
             }
             if (submitText) submitText.textContent = "Entrar a mi Gimnasio";
@@ -120,60 +117,13 @@ function setAuthTab(tab) {
             if (usernameHint) usernameHint.classList.remove("hidden");
             if (usernameLabel) usernameLabel.textContent = "Nombre de Usuario (mínimo 5 letras)";
             if (usernameInput) {
-                usernameInput.placeholder = "Elige tu usuario (mínimo 5 letras)";
+                usernameInput.placeholder = "Elige tu usuario (ej: juanfit)";
                 usernameInput.setAttribute("minlength", "5");
             }
             if (submitText) submitText.textContent = "Crear Mi Cuenta Segura";
         }
     }
     lucide.createIcons();
-}
-
-function quickUseGmail() {
-    setAuthTab('register');
-    const emailInput = document.getElementById("auth-email-input");
-    if (emailInput) {
-        emailInput.focus();
-        emailInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-}
-
-async function handleGoogleCredentialResponse(response) {
-    const errorBox = document.getElementById("auth-error-box");
-    const errorText = document.getElementById("auth-error-text");
-    if (errorBox) errorBox.classList.add("hidden");
-
-    try {
-        const res = await fetch("/api/auth/google", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ credential: response.credential })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-            if (errorBox && errorText) {
-                errorText.textContent = data.error || "Error al autenticar con Google";
-                errorBox.classList.remove("hidden");
-            }
-            return;
-        }
-
-        // Success!
-        setAuthSession(data.token, data.user);
-        showAuthModal(false);
-        showToast(data.message || `¡Bienvenido, ${data.user.name || data.user.username}!`);
-
-        // Load user data
-        await fetchPopularExercises();
-        await loadWorkoutForDate(currentDate);
-        renderWeekStrip();
-    } catch (err) {
-        console.error("Google sign in error:", err);
-        if (errorBox && errorText) {
-            errorText.textContent = "No se pudo conectar con el servidor para iniciar sesión con Google";
-            errorBox.classList.remove("hidden");
-        }
-    }
 }
 
 function togglePasswordVisibility() {
@@ -215,13 +165,23 @@ async function handleAuthSubmit(e) {
         return;
     }
 
-    if (currentAuthTab === "register" && username.length < 5) {
-        if (errorBox && errorText) {
-            errorText.textContent = "El nombre de usuario debe tener al menos 5 letras o caracteres";
-            errorBox.classList.remove("hidden");
+    if (currentAuthTab === "register") {
+        if (username.length < 5) {
+            if (errorBox && errorText) {
+                errorText.textContent = "El nombre de usuario debe tener al menos 5 letras o caracteres";
+                errorBox.classList.remove("hidden");
+            }
+            if (usernameInput) usernameInput.focus();
+            return;
         }
-        if (usernameInput) usernameInput.focus();
-        return;
+        if (password.length < 4) {
+            if (errorBox && errorText) {
+                errorText.textContent = "La contraseña debe tener al menos 4 caracteres";
+                errorBox.classList.remove("hidden");
+            }
+            if (passwordInput) passwordInput.focus();
+            return;
+        }
     }
 
     if (submitBtn) {

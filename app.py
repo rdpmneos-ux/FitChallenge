@@ -179,12 +179,11 @@ def add_security_headers(response):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://accounts.google.com https://unpkg.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; "
-        "style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; "
+        "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: https:; "
-        "connect-src 'self' https://accounts.google.com; "
-        "frame-src https://accounts.google.com; "
+        "connect-src 'self'; "
         "object-src 'none'; "
         "base-uri 'self';"
     )
@@ -203,7 +202,7 @@ def forbidden(e):
 def not_found(e):
     if request.path.startswith("/api/"):
         return jsonify({"error": "Recurso no encontrado"}), 404
-    return render_template("index.html", google_client_id=os.environ.get("GOOGLE_CLIENT_ID", "")), 200
+    return render_template("index.html"), 200
 
 @app.errorhandler(500)
 def internal_server_error(e):
@@ -229,8 +228,7 @@ def require_auth():
 
 @app.route("/")
 def index():
-    google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
-    return render_template("index.html", google_client_id=google_client_id)
+    return render_template("index.html")
 
 @app.route("/descargar-apk")
 @app.route("/download/apk")
