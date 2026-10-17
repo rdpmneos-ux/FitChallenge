@@ -47,7 +47,10 @@ class PostgresCursorWrapper:
         is_insert = converted_query.strip().upper().startswith("INSERT INTO")
         has_returning = "RETURNING" in converted_query.upper()
         if is_insert and not has_returning:
-            converted_query += " RETURNING id"
+            if "USER_SESSIONS" not in converted_query.upper():
+                converted_query += " RETURNING id"
+            else:
+                converted_query += " RETURNING token"
 
         if params is not None:
             self.cur.execute(converted_query, params)
@@ -58,8 +61,8 @@ class PostgresCursorWrapper:
             try:
                 row = self.cur.fetchone()
                 if row:
-                    if isinstance(row, dict) and "id" in row:
-                        self._last_id = row["id"]
+                    if isinstance(row, dict):
+                        self._last_id = row.get("id") or row.get("token")
                     elif hasattr(row, "__getitem__"):
                         self._last_id = row[0]
             except Exception:
@@ -199,7 +202,7 @@ def init_postgres_db(db_url):
 
 def get_db(db_path=None):
     db_url = get_database_url()
-    if db_url and PSYCOPG2_AVAILABLE and db_path is None:
+    if db_url and PSYCOPG2_AVAILABLE and (db_path is None or db_path == DB_PATH):
         conn = psycopg2.connect(db_url)
         return PostgresConnectionWrapper(conn)
 
@@ -212,7 +215,7 @@ def get_db(db_path=None):
 
 def init_db(db_path=None):
     db_url = get_database_url()
-    if db_url and PSYCOPG2_AVAILABLE and db_path is None:
+    if db_url and PSYCOPG2_AVAILABLE and (db_path is None or db_path == DB_PATH):
         init_postgres_db(db_url)
         return
 
