@@ -196,13 +196,9 @@
                         class="text-xs sm:text-sm bg-transparent text-slate-400 placeholder-slate-600 focus:outline-none focus:text-slate-200 mt-1 w-full">
                 </div>
 
-                <!-- Action Buttons: Quick Rest Timer & Add Exercise -->
-                <div class="flex items-center gap-2 sm:gap-3">
-                    <button type="button" onclick="openRestTimerModal()" title="Abrir temporizador de descanso" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 shadow-sm">
-                        <i data-lucide="timer" class="w-4 h-4"></i>
-                        <span>Descanso</span>
-                    </button>
-                    <button onclick="openAddExerciseModal()" class="w-full md:w-auto px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-sm transition shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 group">
+                <!-- Action Button: Add Exercise -->
+                <div class="flex items-center">
+                    <button onclick="openAddExerciseModal()" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-sm transition shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 group">
                         <i data-lucide="plus-circle" class="w-4 h-4 group-hover:rotate-90 transition-transform"></i>
                         <span>Anotar Ejercicio</span>
                     </button>

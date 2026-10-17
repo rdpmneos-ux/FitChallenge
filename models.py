@@ -190,14 +190,15 @@ def init_postgres_db(db_url):
             );
             """)
 
-            cur.execute("SELECT COUNT(*) FROM popular_exercises")
-            count = cur.fetchone()[0]
-            if count == 0:
-                for item in seed_data.DEFAULT_POPULAR_EXERCISES:
-                    cur.execute(
-                        "INSERT INTO popular_exercises (name, muscle_group) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
-                        (item["name"], item["muscle_group"])
-                    )
+            for item in seed_data.DEFAULT_POPULAR_EXERCISES:
+                cur.execute(
+                    """
+                    INSERT INTO popular_exercises (name, muscle_group) 
+                    VALUES (%s, %s) 
+                    ON CONFLICT (name) DO UPDATE SET muscle_group = EXCLUDED.muscle_group
+                    """,
+                    (item["name"], item["muscle_group"])
+                )
         conn.commit()
 
 def get_db(db_path=None):
@@ -351,6 +352,24 @@ def init_db(db_path=None):
             if admin_row and check_password_hash(admin_row["password_hash"], "admin123"):
                 cur.execute("DELETE FROM users WHERE id = ?", (admin_row["id"],))
         except Exception:
+            pass
+
+        # Ensure popular exercises table is initialized in SQLite
+        try:
+            import seed_data
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS popular_exercises (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                muscle_group TEXT NOT NULL
+            );
+            """)
+            for item in seed_data.DEFAULT_POPULAR_EXERCISES:
+                conn.execute(
+                    "INSERT INTO popular_exercises (name, muscle_group) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET muscle_group = excluded.muscle_group",
+                    (item["name"], item["muscle_group"])
+                )
+        except Exception as e:
             pass
 
         conn.commit()

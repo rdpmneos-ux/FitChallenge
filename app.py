@@ -101,37 +101,7 @@ def sanitize_str(val, max_len=80, default=""):
     return cleaned[:max_len]
 
 # Predefined popular exercises for quick selection & autocomplete
-DEFAULT_EXERCISES = [
-    {"name": "Press de Banca", "muscle": "Pecho"},
-    {"name": "Press Inclinado con Mancuernas", "muscle": "Pecho"},
-    {"name": "Aperturas en Polea", "muscle": "Pecho"},
-    {"name": "Fondos en Paralelas", "muscle": "Tríceps / Pecho"},
-    {"name": "Dominadas", "muscle": "Espalda"},
-    {"name": "Remo con Barra", "muscle": "Espalda"},
-    {"name": "Jalón al Pecho", "muscle": "Espalda"},
-    {"name": "Remo Gironda", "muscle": "Espalda"},
-    {"name": "Sentadilla con Barra", "muscle": "Piernas"},
-    {"name": "Hip Thrust", "muscle": "Piernas"},
-    {"name": "Prensa de Piernas", "muscle": "Piernas"},
-    {"name": "Peso Muerto Rumano", "muscle": "Piernas / Isquios"},
-    {"name": "Sentadilla Búlgara", "muscle": "Piernas"},
-    {"name": "Zancadas / Lunges", "muscle": "Piernas"},
-    {"name": "Extensiones de Cuádriceps", "muscle": "Piernas"},
-    {"name": "Curl Femoral Tumbado", "muscle": "Piernas"},
-    {"name": "Puente de Glúteos", "muscle": "Piernas"},
-    {"name": "Abductores en Máquina", "muscle": "Piernas"},
-    {"name": "Elevación de Talones (Gemelos)", "muscle": "Piernas"},
-    {"name": "Press Militar con Barra", "muscle": "Hombros"},
-    {"name": "Press Militar Mancuernas", "muscle": "Hombros"},
-    {"name": "Elevaciones Laterales", "muscle": "Hombros"},
-    {"name": "Pájaros con Mancuerna", "muscle": "Hombros"},
-    {"name": "Curl con Barra Z", "muscle": "Bíceps"},
-    {"name": "Curl Martillo con Mancuernas", "muscle": "Bíceps"},
-    {"name": "Extensiones de Tríceps en Polea", "muscle": "Tríceps"},
-    {"name": "Press Francés", "muscle": "Tríceps"},
-    {"name": "Plancha Abdominal", "muscle": "Core"},
-    {"name": "Elevaciones de Piernas Colgado", "muscle": "Core"}
-]
+DEFAULT_EXERCISES = seed_data.DEFAULT_EXERCISES_DATA
 
 # Initialize database and execute auto-migrations on startup
 with app.app_context():

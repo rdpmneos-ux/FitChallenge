@@ -1076,9 +1076,14 @@ function renderExerciseDropdownItems(filterText = "") {
     if (!menu) return;
     menu.innerHTML = "";
 
-    const query = (filterText || "").trim().toLowerCase();
-    const filtered = query
-        ? popularExercises.filter(ex => ex.name.toLowerCase().includes(query) || (ex.muscle && ex.muscle.toLowerCase().includes(query)))
+    const rawQuery = (filterText || "").trim().toLowerCase();
+    const queryNorm = rawQuery.replace(/\bhacka\b/g, "hack");
+    const filtered = rawQuery
+        ? popularExercises.filter(ex => {
+            const exName = ex.name.toLowerCase();
+            const exMuscle = (ex.muscle || "").toLowerCase();
+            return exName.includes(rawQuery) || exName.includes(queryNorm) || exMuscle.includes(rawQuery);
+        })
         : popularExercises;
 
     if (filtered.length === 0) {
@@ -1202,11 +1207,15 @@ function onModalExerciseInput(val) {
         }
 
         // Auto-match muscle group if known
-        const match = popularExercises.find(ex => ex.name.toLowerCase() === name.toLowerCase());
+        const normName = name.toLowerCase().replace(/\bhacka\b/g, "hack");
+        const match = popularExercises.find(ex => {
+            const n = ex.name.toLowerCase();
+            return n === name.toLowerCase() || n.replace(/\bhacka\b/g, "hack") === normName || n.includes(name.toLowerCase());
+        });
         if (match && match.muscle) {
             const select = document.getElementById("modal-muscle-select");
             for (let opt of select.options) {
-                if (opt.value.toLowerCase().includes(match.muscle.toLowerCase()) || match.muscle.toLowerCase().includes(opt.value.toLowerCase())) {
+                if (opt.value.toLowerCase() === match.muscle.toLowerCase() || opt.value.toLowerCase().includes(match.muscle.toLowerCase()) || match.muscle.toLowerCase().includes(opt.value.toLowerCase())) {
                     select.value = opt.value;
                     break;
                 }
