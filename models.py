@@ -363,8 +363,8 @@ def create_user(username, password, name=None, email=None, recovery_question=Non
     recovery_question = (recovery_question or "").strip() or "¿Cuál es tu palabra o frase secreta de recuperación?"
     recovery_answer = (recovery_answer or "").strip().lower()
 
-    if not username or len(username) < 5:
-        return None, "El nombre de usuario debe tener al menos 5 letras o caracteres"
+    if not username or len(username) < 4:
+        return None, "El nombre de usuario debe tener al menos 4 letras o caracteres"
     if len(username) > 50:
         return None, "El nombre de usuario no puede exceder 50 caracteres"
     if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
@@ -445,8 +445,8 @@ def find_or_create_google_user(email, name=None, db_path=None):
         # 2. Derive unique username with at least 5 chars
         base_username = email.split("@")[0].lower()
         base_username = re.sub(r'[^a-z0-9_]', '', base_username)
-        if len(base_username) < 5:
-            base_username = base_username.ljust(5, '0')
+        if len(base_username) < 4:
+            base_username = base_username.ljust(4, '0')
         
         candidate_username = base_username
         counter = 1

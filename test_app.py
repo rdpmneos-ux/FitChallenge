@@ -186,21 +186,21 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         self.assertIn("Progreso", week_data["verdict"])
 
     def test_username_minimum_length_validation(self):
-        # 4-character username should be rejected
+        # 3-character username should be rejected
         res = self.client.post("/api/auth/register", json={
-            "username": "juan",
+            "username": "ana",
             "password": "password123",
-            "name": "Juan Test"
+            "name": "Ana Test"
         })
         self.assertEqual(res.status_code, 400)
         data = json.loads(res.data)
-        self.assertIn("5 letras", data["error"])
+        self.assertIn("4 letras", data["error"])
 
-        # 5-character username should succeed
+        # 4-character username should succeed
         res_ok = self.client.post("/api/auth/register", json={
-            "username": "juanc",
+            "username": "juan",
             "password": "password123",
-            "name": "Juan C"
+            "name": "Juan Test"
         })
         self.assertEqual(res_ok.status_code, 200)
 
@@ -246,7 +246,7 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         self.assertIsNone(err)
         self.assertIsNotNone(user)
         self.assertEqual(user["email"], "atleta@gmail.com")
-        self.assertTrue(len(user["username"]) >= 5)
+        self.assertTrue(len(user["username"]) >= 4)
 
         # Calling again returns same user
         user2, err2 = models.find_or_create_google_user("atleta@gmail.com", name="Atleta Pro", db_path=self.test_db)

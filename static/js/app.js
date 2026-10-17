@@ -115,10 +115,10 @@ function setAuthTab(tab) {
             if (recoveryContainer) recoveryContainer.classList.remove("hidden");
             if (forgotLink) forgotLink.classList.add("hidden");
             if (usernameHint) usernameHint.classList.remove("hidden");
-            if (usernameLabel) usernameLabel.textContent = "Nombre de Usuario (mínimo 5 letras)";
+            if (usernameLabel) usernameLabel.textContent = "Nombre de Usuario (mínimo 4 letras)";
             if (usernameInput) {
-                usernameInput.placeholder = "Elige tu usuario (ej: juanfit)";
-                usernameInput.setAttribute("minlength", "5");
+                usernameInput.placeholder = "Elige tu usuario (ej: juan)";
+                usernameInput.setAttribute("minlength", "4");
             }
             if (submitText) submitText.textContent = "Crear Mi Cuenta Segura";
         }
@@ -166,9 +166,9 @@ async function handleAuthSubmit(e) {
     }
 
     if (currentAuthTab === "register") {
-        if (username.length < 5) {
+        if (username.length < 4) {
             if (errorBox && errorText) {
-                errorText.textContent = "El nombre de usuario debe tener al menos 5 letras o caracteres";
+                errorText.textContent = "El nombre de usuario debe tener al menos 4 letras o caracteres";
                 errorBox.classList.remove("hidden");
             }
             if (usernameInput) usernameInput.focus();
