@@ -23,7 +23,7 @@ def get_database_url():
         url = os.environ.get("RENDER_DATABASE_URL", "").strip() or os.environ.get("POSTGRES_URL", "").strip()
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
-    if url and "sslmode" not in url and ("render.com" in url or "oregon-postgres" in url or "frankfurt-postgres" in url):
+    if url and "sslmode" not in url and not url.startswith("postgresql://localhost") and "@localhost" not in url and "@127.0.0.1" not in url:
         sep = "&" if "?" in url else "?"
         url = f"{url}{sep}sslmode=require"
     return url or None

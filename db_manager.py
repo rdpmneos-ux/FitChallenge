@@ -71,15 +71,19 @@ def parse_url_details(url):
     if m:
         user, _, host, port, dbname = m.groups()
         is_render = "render.com" in host or "dpg-" in host
+        is_neon = "neon.tech" in host
+        provider = "Neon Serverless Postgres" if is_neon else ("Render Managed Postgres" if is_render else "PostgreSQL Cloud")
         return {
             "user": user,
             "host": host,
             "port": int(port or 5432),
             "database": dbname,
             "is_render": is_render,
-            "sslmode": "require" if ("sslmode=require" in url or is_render) else "prefer"
+            "is_neon": is_neon,
+            "provider": provider,
+            "sslmode": "require" if ("sslmode=require" in url or is_render or is_neon) else "prefer"
         }
-    return {"host": "desconocido", "database": "desconocido", "is_render": False}
+    return {"host": "desconocido", "database": "desconocido", "is_render": False, "is_neon": False, "provider": "PostgreSQL"}
 
 def get_connection(custom_url=None):
     """
@@ -89,8 +93,8 @@ def get_connection(custom_url=None):
     target_url = custom_url or models.get_database_url()
     
     if target_url and models.PSYCOPG2_AVAILABLE:
-        # Asegurar sslmode=require para Render
-        if "sslmode" not in target_url and ("render.com" in target_url or "dpg-" in target_url):
+        # Asegurar sslmode=require para Render, Neon y conexiones remotas
+        if "sslmode" not in target_url and not target_url.startswith("postgresql://localhost") and "@localhost" not in target_url:
             sep = "&" if "?" in target_url else "?"
             target_url = f"{target_url}{sep}sslmode=require"
             

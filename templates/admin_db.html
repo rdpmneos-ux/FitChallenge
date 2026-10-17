@@ -379,7 +379,7 @@
         </main>
     </div>
 
-    <!-- MODAL: CONECTAR RENDER POSTGRESQL -->
+    <!-- MODAL: CONECTAR POSTGRESQL CLOUD (NEON / RENDER) -->
     <div id="modal-connect" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl space-y-4">
             <div class="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -388,8 +388,8 @@
                         <i data-lucide="cloud" class="w-5 h-5"></i>
                     </div>
                     <div>
-                        <h3 class="text-sm font-bold text-white">Conectar a Render PostgreSQL</h3>
-                        <p class="text-[11px] text-slate-400">Pega tu cadena de conexión External o Internal de Render</p>
+                        <h3 class="text-sm font-bold text-white">Conectar Base de Datos Cloud (PostgreSQL)</h3>
+                        <p class="text-[11px] text-slate-400">Compatible con Neon.tech (Gratis de por vida) o Render</p>
                     </div>
                 </div>
                 <button onclick="closeConnectModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
@@ -400,13 +400,19 @@
             <!-- Test Feedback Alert -->
             <div id="connect-alert-box" class="hidden p-3 rounded-xl text-xs flex items-center gap-2"></div>
 
+            <!-- Free Forever Recommendation Note -->
+            <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[11px] space-y-1">
+                <strong class="font-bold flex items-center gap-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Opción Gratuita de por vida recomendada: Neon.tech</strong>
+                <p class="text-slate-300 text-[10px]">Crea una cuenta gratis en <strong>neon.tech</strong> (no expira a los 30 días como Render), copia tu URL de conexión y pégala aquí abajo.</p>
+            </div>
+
             <form onsubmit="handleConnectSubmit(event)" class="space-y-3">
                 <div class="space-y-1">
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">URL de Render PostgreSQL (DATABASE_URL)</label>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">URL de PostgreSQL (DATABASE_URL)</label>
                     <div class="relative">
-                        <input type="password" id="input-render-url" required placeholder="postgresql://user:password@dpg-xxx-a.oregon-postgres.render.com/fitchallenge_db" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-emerald-400 font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition">
+                        <input type="password" id="input-render-url" required placeholder="postgresql://user:password@ep-xyz.us-east-2.aws.neon.tech/neondb?sslmode=require" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-emerald-400 font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition">
                     </div>
-                    <span class="text-[10px] text-slate-500 block">Render añade automáticamente sslmode=require. El gestor lo detectará de forma segura.</span>
+                    <span class="text-[10px] text-slate-500 block">El gestor activará automáticamente sslmode=require de forma segura.</span>
                 </div>
 
                 <div class="grid grid-cols-2 gap-2 pt-2">
@@ -485,7 +491,7 @@
             
             if (badge) {
                 if (data.engine === "postgresql") {
-                    const label = data.is_render ? "Render Managed Postgres" : "PostgreSQL";
+                    const label = data.provider || (data.is_render ? "Render Managed Postgres" : "PostgreSQL Cloud");
                     badge.className = "text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/40 flex items-center gap-1.5 shadow-sm shadow-emerald-500/10";
                     badge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span><span>🟢 ${label} (Persistente)</span>`;
                     if (helper) {
@@ -495,7 +501,7 @@
                     badge.className = "text-xs px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 font-bold border border-amber-500/40 flex items-center gap-1.5 shadow-sm shadow-amber-500/10";
                     badge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span><span>🟡 SQLite Local (Temporal)</span>`;
                     if (helper) {
-                        helper.innerHTML = `<button onclick="openConnectModal()" class="text-amber-400 hover:text-amber-300 underline font-bold text-[11px] flex items-center gap-1">⚠️ Conectar a Render</button>`;
+                        helper.innerHTML = `<button onclick="openConnectModal()" class="text-amber-400 hover:text-amber-300 underline font-bold text-[11px] flex items-center gap-1">⚠️ Conectar Base de Datos Cloud</button>`;
                     }
                 }
             }
