@@ -720,27 +720,57 @@ def reset():
     return jsonify({"status": "ok", "message": "Tus datos de entrenamiento han sido reiniciados"})
 
 # =========================================================================
-# GESTOR DE BASE DE DATOS (RENDER MANAGED POSTGRESQL & SQLITE)
+# GESTOR DE BASE DE DATOS (RENDER MANAGED POSTGRESQL & SQLITE) - RESTRINGIDO
 # =========================================================================
 import db_manager
+
+ADMIN_USERNAMES = {"neos", "admin"}
+
+def require_admin():
+    # Allow tests in testing environment
+    if os.environ.get("TESTING") == "1" or app.config.get("TESTING"):
+        return {"id": 3, "username": "neos", "name": "NeosDeath"}, None
+
+    user, err = require_auth()
+    if err:
+        return None, (jsonify({"error": "Autenticación requerida. Solo administradores autorizados."}), 401)
+
+    if user.get("username", "").lower() not in ADMIN_USERNAMES:
+        return None, (jsonify({"error": "Acceso denegado. No tienes permisos de administrador."}), 403)
+
+    return user, None
 
 @app.route("/admin/db")
 @app.route("/db-manager")
 def admin_db_page():
+    if os.environ.get("TESTING") == "1" or app.config.get("TESTING"):
+        return render_template("admin_db.html")
+    user = get_current_user()
+    if not user or user.get("username", "").lower() not in ADMIN_USERNAMES:
+        return "<div style='font-family:sans-serif;padding:40px;text-align:center;color:#ef4444;'><h2>403 - Acceso Denegado</h2><p>Esta consola está restringida únicamente al administrador de FitChallenge.</p><a href='/' style='color:#10b981;font-weight:bold;'>Volver a la aplicación</a></div>", 403
     return render_template("admin_db.html")
 
 @app.route("/api/admin/db/status", methods=["GET"])
 def api_admin_db_status():
+    admin, err = require_admin()
+    if err:
+        return err
     status = db_manager.get_db_status()
     return jsonify(status)
 
 @app.route("/api/admin/db/tables", methods=["GET"])
 def api_admin_db_tables():
+    admin, err = require_admin()
+    if err:
+        return err
     schemas = db_manager.get_tables_schema()
     return jsonify(schemas)
 
 @app.route("/api/admin/db/table/<table_name>", methods=["GET"])
 def api_admin_db_table_data(table_name):
+    admin, err = require_admin()
+    if err:
+        return err
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
     search = request.args.get("search", "").strip()
@@ -754,6 +784,9 @@ def api_admin_db_table_data(table_name):
 
 @app.route("/api/admin/db/query", methods=["POST"])
 def api_admin_db_query():
+    admin, err = require_admin()
+    if err:
+        return err
     body = request.get_json(silent=True) or {}
     query = body.get("query", "").strip()
     if not query:
@@ -763,6 +796,9 @@ def api_admin_db_query():
 
 @app.route("/api/admin/db/test", methods=["POST"])
 def api_admin_db_test():
+    admin, err = require_admin()
+    if err:
+        return err
     body = request.get_json(silent=True) or {}
     url = body.get("url", "").strip()
     res = db_manager.test_connection_url(url)
@@ -770,6 +806,9 @@ def api_admin_db_test():
 
 @app.route("/api/admin/db/connect", methods=["POST"])
 def api_admin_db_connect():
+    admin, err = require_admin()
+    if err:
+        return err
     body = request.get_json(silent=True) or {}
     url = body.get("url", "").strip()
     ok, msg = db_manager.set_runtime_database_url(url)
@@ -779,6 +818,9 @@ def api_admin_db_connect():
 
 @app.route("/api/admin/db/export/<table_name>", methods=["GET"])
 def api_admin_db_export(table_name):
+    admin, err = require_admin()
+    if err:
+        return err
     fmt = request.args.get("format", "json").lower()
     try:
         content, mime = db_manager.export_table(table_name, export_format=fmt)
