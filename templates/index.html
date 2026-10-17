@@ -22,6 +22,17 @@
             });
         }
     </script>
+    <script>
+        // Immediate status bar detection for native APK & PWA to prevent top layout clipping
+        (function() {
+            var ua = navigator.userAgent || '';
+            var isNative = ua.indexOf('FitChallengeApp') !== -1;
+            var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            if (isNative || isStandalone) {
+                document.documentElement.classList.add('is-native-app');
+            }
+        })();
+    </script>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -58,22 +69,23 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="/static/css/style.css?v=2.3">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.5">
 </head>
 <body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
 
     <!-- Top App Navigation Bar -->
-    <header class="sticky top-0 z-40 bg-[#0c121e]/90 backdrop-blur-md border-b border-slate-800/80">
-        <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-            <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('daily')">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                    <i data-lucide="dumbbell" class="w-5 h-5 text-slate-950 font-bold"></i>
+    <header class="app-header sticky top-0 z-40 bg-[#0c121e]/95 backdrop-blur-md border-b border-slate-800/80 transition-all">
+        <div class="max-w-6xl mx-auto px-3.5 sm:px-6 h-16 flex items-center justify-between gap-2">
+            <div class="flex items-center space-x-2.5 cursor-pointer min-w-0 shrink" onclick="switchTab('daily')">
+                <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
+                    <i data-lucide="dumbbell" class="w-4 h-4 sm:w-5 sm:h-5 text-slate-950 font-bold"></i>
                 </div>
-                <div>
-                    <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                        FitChallenge <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20">Semanal</span>
+                <div class="min-w-0">
+                    <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-1.5 truncate">
+                        <span>FitChallenge</span>
+                        <span class="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20">Semanal</span>
                     </h1>
-                    <p class="text-xs text-slate-400 hidden sm:block">Control de cargas, series & sobrecarga progresiva</p>
+                    <p class="text-xs text-slate-400 hidden sm:block truncate">Control de cargas, series & sobrecarga progresiva</p>
                 </div>
             </div>
 
@@ -94,10 +106,10 @@
             </nav>
 
             <!-- Quick Data Tools, Timer & User Profile -->
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
                 <!-- Prominent Rest Timer Button -->
-                <button onclick="openRestTimerModal()" id="header-timer-btn" title="Temporizador de descanso" class="text-xs px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 transition font-bold shadow-sm shadow-emerald-500/15">
-                    <i data-lucide="timer" class="w-4 h-4 text-emerald-400"></i>
+                <button onclick="openRestTimerModal()" id="header-timer-btn" title="Temporizador de descanso" class="text-xs px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 transition font-bold shadow-sm shadow-emerald-500/15">
+                    <i data-lucide="timer" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400"></i>
                     <span id="header-timer-text">Descanso</span>
                 </button>
                 <button onclick="loadSampleData()" title="Cargar datos de ejemplo" class="hidden sm:flex text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 items-center gap-1.5 transition">
@@ -121,7 +133,7 @@
                     </button>
                 </div>
                 <!-- Login Button (when unauthenticated) -->
-                <button id="header-login-btn" onclick="showAuthModal(true)" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition">
+                <button id="header-login-btn" onclick="showAuthModal(true)" class="text-xs px-2.5 sm:px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition">
                     <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
                     <span>Entrar</span>
                 </button>
@@ -391,7 +403,7 @@
     </main>
 
     <!-- Bottom Navigation Bar for Mobile -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0c121e]/95 backdrop-blur-md border-t border-slate-800 px-3 py-2 flex items-center justify-around">
+    <nav class="mobile-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0c121e]/95 backdrop-blur-md border-t border-slate-800 px-3 py-2 flex items-center justify-around">
         <button onclick="switchTab('daily')" id="mob-btn-daily" class="flex flex-col items-center gap-1 text-emerald-400">
             <i data-lucide="calendar-check" class="w-5 h-5"></i>
             <span class="text-[10px] font-medium">Diario</span>

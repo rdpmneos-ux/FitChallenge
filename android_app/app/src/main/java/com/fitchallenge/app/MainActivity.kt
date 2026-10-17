@@ -22,13 +22,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Make full screen immersion
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        )
+        // Set status bar and navigation bar colors matching the app dark theme
+        window.statusBarColor = getColor(R.color.bg_dark)
+        window.navigationBarColor = getColor(R.color.bg_dark)
 
         webView = WebView(this).apply {
+            fitsSystemWindows = true
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
