@@ -1,6 +1,38 @@
 from datetime import datetime, timedelta
 import models
 
+DEFAULT_POPULAR_EXERCISES = [
+    {"name": "Press de Banca", "muscle_group": "Pecho"},
+    {"name": "Press Inclinado con Mancuernas", "muscle_group": "Pecho"},
+    {"name": "Aperturas en Polea", "muscle_group": "Pecho"},
+    {"name": "Fondos en Paralelas", "muscle_group": "Tríceps / Pecho"},
+    {"name": "Dominadas", "muscle_group": "Espalda"},
+    {"name": "Remo con Barra", "muscle_group": "Espalda"},
+    {"name": "Jalón al Pecho", "muscle_group": "Espalda"},
+    {"name": "Remo Gironda", "muscle_group": "Espalda"},
+    {"name": "Sentadilla con Barra", "muscle_group": "Piernas"},
+    {"name": "Hip Thrust", "muscle_group": "Piernas"},
+    {"name": "Prensa de Piernas", "muscle_group": "Piernas"},
+    {"name": "Peso Muerto Rumano", "muscle_group": "Piernas / Isquios"},
+    {"name": "Sentadilla Búlgara", "muscle_group": "Piernas"},
+    {"name": "Zancadas / Lunges", "muscle_group": "Piernas"},
+    {"name": "Extensiones de Cuádriceps", "muscle_group": "Piernas"},
+    {"name": "Curl Femoral Tumbado", "muscle_group": "Piernas"},
+    {"name": "Puente de Glúteos", "muscle_group": "Piernas"},
+    {"name": "Abductores en Máquina", "muscle_group": "Piernas"},
+    {"name": "Elevación de Talones (Gemelos)", "muscle_group": "Piernas"},
+    {"name": "Press Militar con Barra", "muscle_group": "Hombros"},
+    {"name": "Press Militar Mancuernas", "muscle_group": "Hombros"},
+    {"name": "Elevaciones Laterales", "muscle_group": "Hombros"},
+    {"name": "Pájaros con Mancuerna", "muscle_group": "Hombros"},
+    {"name": "Curl con Barra Z", "muscle_group": "Bíceps"},
+    {"name": "Curl Martillo con Mancuernas", "muscle_group": "Bíceps"},
+    {"name": "Extensiones de Tríceps en Polea", "muscle_group": "Tríceps"},
+    {"name": "Press Francés", "muscle_group": "Tríceps"},
+    {"name": "Plancha Abdominal", "muscle_group": "Core"},
+    {"name": "Elevaciones de Piernas Colgado", "muscle_group": "Core"}
+]
+
 def populate_seed_data(db_path=models.DB_PATH, user_id=1):
     models.init_db(db_path)
     today = datetime.now()

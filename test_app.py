@@ -7,6 +7,7 @@ import models
 
 class WorkoutTrackerTestCase(unittest.TestCase):
     def setUp(self):
+        os.environ["TESTING"] = "1"
         self.test_id = uuid.uuid4().hex[:8]
         self.test_db = os.path.join(os.path.dirname(__file__), f"test_{self.test_id}.db")
         models.DB_PATH = self.test_db
@@ -16,6 +17,7 @@ class WorkoutTrackerTestCase(unittest.TestCase):
 
     def tearDown(self):
         models.DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
+        os.environ.pop("TESTING", None)
         if os.path.exists(self.test_db):
             try:
                 os.remove(self.test_db)

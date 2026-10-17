@@ -15,12 +15,18 @@ except ImportError:
 DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
 OVERRIDE_DATABASE_URL = None
 
+NEON_PRODUCTION_DATABASE_URL = "postgresql://neondb_owner:npg_exO6i2ZwWAcM@ep-billowing-credit-b5ptjdoe-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+
 def get_database_url():
+    if os.environ.get("TESTING") == "1":
+        return None
     if OVERRIDE_DATABASE_URL:
         return OVERRIDE_DATABASE_URL
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
         url = os.environ.get("RENDER_DATABASE_URL", "").strip() or os.environ.get("POSTGRES_URL", "").strip()
+    if not url:
+        url = NEON_PRODUCTION_DATABASE_URL
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     if url and "sslmode" not in url and not url.startswith("postgresql://localhost") and "@localhost" not in url and "@127.0.0.1" not in url:
