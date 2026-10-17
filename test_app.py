@@ -443,6 +443,45 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         })
         self.assertEqual(res_reused.status_code, 400)
 
+    def test_database_manager_endpoints(self):
+        # 1. Admin DB Page loads
+        res_page = self.client.get("/admin/db")
+        self.assertEqual(res_page.status_code, 200)
+        self.assertIn(b"FitChallenge Studio", res_page.data)
+
+        # 2. Status endpoint returns tables
+        res_status = self.client.get("/api/admin/db/status")
+        self.assertEqual(res_status.status_code, 200)
+        st_data = json.loads(res_status.data)
+        self.assertTrue(st_data["ok"])
+        self.assertIn("tables", st_data)
+        self.assertGreater(st_data["tables_count"], 0)
+
+        # 3. Tables schema endpoint
+        res_schemas = self.client.get("/api/admin/db/tables")
+        self.assertEqual(res_schemas.status_code, 200)
+        schemas_data = json.loads(res_schemas.data)
+        self.assertIn("users", schemas_data)
+
+        # 4. Table data query
+        res_table = self.client.get("/api/admin/db/table/users?page=1&per_page=10")
+        self.assertEqual(res_table.status_code, 200)
+        tbl_data = json.loads(res_table.data)
+        self.assertEqual(tbl_data["table"], "users")
+        self.assertIn("columns", tbl_data)
+
+        # 5. Execute custom SQL query
+        res_sql = self.client.post("/api/admin/db/query", json={"query": "SELECT 1 as num, 'admin' as role;"})
+        self.assertEqual(res_sql.status_code, 200)
+        sql_data = json.loads(res_sql.data)
+        self.assertEqual(sql_data["status"], "ok")
+        self.assertEqual(sql_data["row_count"], 1)
+        self.assertEqual(sql_data["rows"][0]["num"], 1)
+
+        # 6. Export table
+        res_export = self.client.get("/api/admin/db/export/users?format=json")
+        self.assertEqual(res_export.status_code, 200)
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -13,11 +13,19 @@ except ImportError:
     PSYCOPG2_AVAILABLE = False
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
+OVERRIDE_DATABASE_URL = None
 
 def get_database_url():
+    if OVERRIDE_DATABASE_URL:
+        return OVERRIDE_DATABASE_URL
     url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        url = os.environ.get("RENDER_DATABASE_URL", "").strip() or os.environ.get("POSTGRES_URL", "").strip()
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
+    if url and "sslmode" not in url and ("render.com" in url or "oregon-postgres" in url or "frankfurt-postgres" in url):
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}sslmode=require"
     return url or None
 
 class PostgresCursorWrapper:

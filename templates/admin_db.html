@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitChallenge • Gestor PostgreSQL Render</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#0f172a',
+                            900: '#0c121e',
+                            950: '#070b13'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0c121e; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
+
+    <!-- Top Header -->
+    <header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <i data-lucide="database" class="w-5 h-5 text-slate-950 font-bold"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-base font-bold tracking-tight text-white">FitChallenge Studio</h1>
+                    <span id="badge-engine" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold border border-slate-700 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                        <span>Verificando...</span>
+                    </span>
+                </div>
+                <p id="sub-engine-info" class="text-xs text-slate-400 font-mono hidden sm:block">Cargando conexión...</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <!-- Ping / Latency Badge -->
+            <button onclick="fetchStatus()" title="Medir latencia en tiempo real" class="px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 text-xs font-mono border border-slate-700 flex items-center gap-1.5 transition">
+                <i data-lucide="activity" class="w-3.5 h-3.5 text-emerald-400"></i>
+                <span id="ping-text">-- ms</span>
+            </button>
+
+            <!-- Connect to Render Modal Trigger -->
+            <button onclick="openConnectModal()" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/15 hover:opacity-95 transition flex items-center gap-1.5">
+                <i data-lucide="cloud" class="w-3.5 h-3.5"></i>
+                <span class="hidden sm:inline">Conectar</span> Render
+            </button>
+
+            <!-- Back to App -->
+            <a href="/" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5">
+                <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+                <span class="hidden sm:inline">Volver a FitChallenge</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Sidebar: Tables & Quick Snippets -->
+        <aside class="w-72 bg-slate-900/60 border-r border-slate-800/80 flex flex-col shrink-0">
+            <!-- Tables Header -->
+            <div class="p-3 border-b border-slate-800/80 flex items-center justify-between">
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="table" class="w-3.5 h-3.5 text-emerald-400"></i>
+                    <span>Tablas (<span id="tables-count">0</span>)</span>
+                </span>
+                <button onclick="fetchStatus()" title="Actualizar tablas" class="text-slate-400 hover:text-white p-1 rounded-lg transition">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+
+            <!-- Tables List -->
+            <div id="tables-list-container" class="flex-1 overflow-y-auto p-2 space-y-1">
+                <div class="p-4 text-center text-xs text-slate-500">Cargando tablas...</div>
+            </div>
+
+            <!-- Quick Query Snippets Section -->
+            <div class="p-3 border-t border-slate-800/80 space-y-2">
+                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Consultas Rápidas</span>
+                <div class="space-y-1 text-xs">
+                    <button onclick="runSnippet('users')" class="w-full text-left px-2.5 py-1.5 rounded-lg bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 transition flex items-center justify-between font-mono text-[11px]">
+                        <span>⚡ Ver Usuarios</span>
+                        <i data-lucide="chevron-right" class="w-3 h-3 text-slate-500"></i>
+                    </button>
+                    <button onclick="runSnippet('workouts')" class="w-full text-left px-2.5 py-1.5 rounded-lg bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 transition flex items-center justify-between font-mono text-[11px]">
+                        <span>⚡ Últimas Rutinas</span>
+                        <i data-lucide="chevron-right" class="w-3 h-3 text-slate-500"></i>
+                    </button>
+                    <button onclick="runSnippet('sessions')" class="w-full text-left px-2.5 py-1.5 rounded-lg bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 transition flex items-center justify-between font-mono text-[11px]">
+                        <span>⚡ Sesiones Activas</span>
+                        <i data-lucide="chevron-right" class="w-3 h-3 text-slate-500"></i>
+                    </button>
+                    <button onclick="runSnippet('stats')" class="w-full text-left px-2.5 py-1.5 rounded-lg bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 transition flex items-center justify-between font-mono text-[11px]">
+                        <span>⚡ Conteo General</span>
+                        <i data-lucide="chevron-right" class="w-3 h-3 text-slate-500"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 flex flex-col min-w-0 bg-slate-950">
+            <!-- Tabs Bar -->
+            <div class="h-12 border-b border-slate-800/80 px-4 sm:px-6 flex items-center justify-between bg-slate-900/40">
+                <div class="flex items-center space-x-1 sm:space-x-2 text-xs font-semibold">
+                    <button id="tab-btn-browser" onclick="switchViewTab('browser')" class="px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 font-bold border border-slate-700 transition flex items-center gap-1.5">
+                        <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+                        <span>Explorador de Datos</span>
+                    </button>
+                    <button id="tab-btn-sql" onclick="switchViewTab('sql')" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition flex items-center gap-1.5">
+                        <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+                        <span>Consola SQL</span>
+                    </button>
+                    <button id="tab-btn-render" onclick="switchViewTab('render')" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition flex items-center gap-1.5">
+                        <i data-lucide="cloud-lightning" class="w-3.5 h-3.5 text-cyan-400"></i>
+                        <span>Diagnóstico Render MSP</span>
+                    </button>
+                </div>
+
+                <!-- Table Header Actions (only in browser tab) -->
+                <div id="browser-actions" class="flex items-center gap-2">
+                    <button onclick="exportCurrentTable('csv')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center gap-1">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                        <span class="hidden sm:inline">CSV</span>
+                    </button>
+                    <button onclick="exportCurrentTable('json')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center gap-1">
+                        <i data-lucide="code" class="w-3.5 h-3.5"></i>
+                        <span class="hidden sm:inline">JSON</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- View 1: Table Browser -->
+            <div id="view-browser" class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden">
+                <!-- Browser Controls (Search & Info) -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3">
+                    <div class="flex items-center gap-2">
+                        <h2 id="active-table-title" class="text-base font-bold text-white flex items-center gap-2">
+                            <span>Selecciona una tabla</span>
+                        </h2>
+                        <span id="active-table-rows" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">0 filas</span>
+                    </div>
+
+                    <!-- Search filter -->
+                    <div class="relative w-full sm:w-64">
+                        <i data-lucide="search" class="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="browser-search" oninput="debounceSearch()" placeholder="Filtrar registros..." class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                    </div>
+                </div>
+
+                <!-- Table Container -->
+                <div class="flex-1 overflow-auto rounded-2xl border border-slate-800 bg-slate-900/50 shadow-inner">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead id="browser-thead" class="sticky top-0 bg-slate-900 border-b border-slate-800 text-slate-400 font-mono uppercase text-[10px] tracking-wider z-10">
+                            <tr>
+                                <th class="p-3">Selecciona una tabla del panel izquierdo</th>
+                            </tr>
+                        </thead>
+                        <tbody id="browser-tbody" class="divide-y divide-slate-800/60 font-mono text-[11px] text-slate-300">
+                            <tr>
+                                <td class="p-8 text-center text-slate-500">Haz clic en cualquier tabla en la barra lateral izquierda para explorar sus filas.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination Footer -->
+                <div class="pt-3 flex items-center justify-between text-xs text-slate-400">
+                    <span id="pagination-info">Mostrando 0 de 0 filas</span>
+                    <div class="flex items-center gap-2">
+                        <button id="btn-prev-page" onclick="changePage(-1)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 disabled:opacity-40 transition">Anterior</button>
+                        <span id="current-page-label" class="font-mono text-emerald-400 font-bold">1 / 1</span>
+                        <button id="btn-next-page" onclick="changePage(1)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 disabled:opacity-40 transition">Siguiente</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- View 2: SQL Console -->
+            <div id="view-sql" class="hidden flex-1 flex flex-col p-4 sm:p-6 overflow-hidden space-y-4">
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                            <i data-lucide="terminal" class="w-3.5 h-3.5 text-emerald-400"></i>
+                            <span>Editor de Consultas SQL (PostgreSQL / SQLite)</span>
+                        </label>
+                        <span class="text-[10px] text-slate-500 font-mono">Presiona Ctrl + Enter para ejecutar</span>
+                    </div>
+
+                    <div class="relative rounded-2xl border border-slate-800 bg-slate-900/90 overflow-hidden shadow-lg">
+                        <textarea id="sql-query-input" rows="5" class="w-full bg-transparent p-3.5 font-mono text-xs text-emerald-400 placeholder-slate-600 focus:outline-none resize-none leading-relaxed" placeholder="SELECT * FROM users ORDER BY id DESC LIMIT 10;"></textarea>
+                        
+                        <div class="bg-slate-900/95 border-t border-slate-800 p-2.5 px-3 flex items-center justify-between">
+                            <div class="flex items-center gap-2 text-xs">
+                                <span class="text-[10px] text-slate-400">Plantillas:</span>
+                                <button onclick="setQueryTemplate('SELECT * FROM users;')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono transition">users</button>
+                                <button onclick="setQueryTemplate('SELECT * FROM workouts ORDER BY date DESC LIMIT 20;')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono transition">workouts</button>
+                                <button onclick="setQueryTemplate('SELECT * FROM exercise_logs ORDER BY id DESC LIMIT 20;')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono transition">exercise_logs</button>
+                            </div>
+
+                            <button onclick="executeSqlQuery()" id="btn-run-sql" class="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 hover:opacity-95 transition flex items-center gap-1.5">
+                                <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+                                <span>Ejecutar</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SQL Output Header -->
+                <div class="flex items-center justify-between text-xs">
+                    <span id="sql-status-text" class="text-slate-400 font-mono">Esperando consulta...</span>
+                    <span id="sql-timing" class="text-slate-500 font-mono text-[11px]"></span>
+                </div>
+
+                <!-- SQL Results Table -->
+                <div class="flex-1 overflow-auto rounded-2xl border border-slate-800 bg-slate-900/50 shadow-inner">
+                    <div id="sql-results-container" class="p-4">
+                        <p class="text-xs text-slate-500 font-mono">Escribe una consulta SQL y presiona "Ejecutar" o presiona Ctrl + Enter.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- View 3: Render Diagnosis & Tutorial -->
+            <div id="view-render" class="hidden flex-1 p-4 sm:p-6 overflow-y-auto space-y-6">
+                <!-- Status Banner -->
+                <div class="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                <i data-lucide="server" class="w-6 h-6"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-base font-bold text-white">Estado del Servidor de Base de Datos</h3>
+                                <p id="diag-engine-label" class="text-xs text-slate-400 font-mono">Detectando configuración...</p>
+                            </div>
+                        </div>
+                        <button onclick="fetchStatus()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                            <span>Verificar Estado</span>
+                        </button>
+                    </div>
+
+                    <!-- Metrics Grid -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                        <div class="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                            <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Host</span>
+                            <div id="diag-host" class="text-xs font-mono text-white truncate pt-0.5">-</div>
+                        </div>
+                        <div class="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                            <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Base de Datos</span>
+                            <div id="diag-db" class="text-xs font-mono text-emerald-400 truncate pt-0.5">-</div>
+                        </div>
+                        <div class="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                            <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">SSL Mode</span>
+                            <div id="diag-ssl" class="text-xs font-mono text-cyan-400 truncate pt-0.5">-</div>
+                        </div>
+                        <div class="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                            <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Latencia</span>
+                            <div id="diag-ping" class="text-xs font-mono text-amber-400 truncate pt-0.5">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Render Connection Instructions -->
+                <div class="p-6 rounded-3xl bg-slate-900/50 border border-slate-800 space-y-4">
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <i data-lucide="cloud" class="w-5 h-5 text-cyan-400"></i>
+                        <span>¿Cómo conectar el PostgreSQL Managed de Render?</span>
+                    </h3>
+
+                    <div class="space-y-4 text-xs text-slate-300 leading-relaxed">
+                        <div class="flex items-start gap-3">
+                            <div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">1</div>
+                            <div>
+                                <strong class="text-white">Crea tu Base de Datos en Render:</strong>
+                                <p class="text-slate-400 mt-0.5">Ingresa a <a href="https://dashboard.render.com" target="_blank" class="text-emerald-400 underline font-semibold">dashboard.render.com</a>, haz clic en <code class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200">New +</code> &gt; <code class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200">PostgreSQL</code>, elige el plan gratuito y nómbrala <code class="text-emerald-300">fitchallenge-db</code>.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-3">
+                            <div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">2</div>
+                            <div>
+                                <strong class="text-white">Copia la Cadena de Conexión:</strong>
+                                <p class="text-slate-400 mt-0.5">En el panel de tu base de datos de Render:</p>
+                                <ul class="list-disc list-inside mt-1 space-y-1 text-slate-400 pl-2">
+                                    <li><strong>Internal Database URL:</strong> Úsala si la web app está desplegada dentro de Render (<code class="font-mono text-slate-300 text-[11px]">dpg-xxxxx-a/fitchallenge</code>).</li>
+                                    <li><strong>External Database URL:</strong> Úsala si te estás conectando desde tu computadora local o herramienta externa (<code class="font-mono text-slate-300 text-[11px]">dpg-xxxxx-a.oregon-postgres.render.com</code>).</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-3">
+                            <div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">3</div>
+                            <div>
+                                <strong class="text-white">Configura la Variable de Entorno en Render:</strong>
+                                <p class="text-slate-400 mt-0.5">En la configuración de tu Web Service en Render, ve a la pestaña <strong>Environment</strong> y añade:</p>
+                                <div class="mt-2 p-2.5 rounded-xl bg-slate-950 font-mono text-[11px] text-emerald-400 border border-slate-800 flex items-center justify-between">
+                                    <span>DATABASE_URL = postgresql://user:password@dpg-...render.com/dbname</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-3">
+                            <div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">4</div>
+                            <div>
+                                <strong class="text-white">Conexión Instantánea desde este Gestor:</strong>
+                                <p class="text-slate-400 mt-0.5">Puedes pegar tu URL de conexión en el botón superior "Conectar Render" para probarla y activarla en tiempo real sin reiniciar el servidor.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL: CONECTAR RENDER POSTGRESQL -->
+    <div id="modal-connect" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                        <i data-lucide="cloud" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Conectar a Render PostgreSQL</h3>
+                        <p class="text-[11px] text-slate-400">Pega tu cadena de conexión External o Internal de Render</p>
+                    </div>
+                </div>
+                <button onclick="closeConnectModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <!-- Test Feedback Alert -->
+            <div id="connect-alert-box" class="hidden p-3 rounded-xl text-xs flex items-center gap-2"></div>
+
+            <form onsubmit="handleConnectSubmit(event)" class="space-y-3">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">URL de Render PostgreSQL (DATABASE_URL)</label>
+                    <div class="relative">
+                        <input type="password" id="input-render-url" required placeholder="postgresql://user:password@dpg-xxx-a.oregon-postgres.render.com/fitchallenge_db" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-emerald-400 font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition">
+                    </div>
+                    <span class="text-[10px] text-slate-500 block">Render añade automáticamente sslmode=require. El gestor lo detectará de forma segura.</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 pt-2">
+                    <button type="button" onclick="testConnectionInput()" id="btn-test-conn" class="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center justify-center gap-2">
+                        <i data-lucide="activity" class="w-3.5 h-3.5 text-cyan-400"></i>
+                        <span>Probar Conexión</span>
+                    </button>
+                    <button type="submit" id="btn-save-conn" class="py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 hover:opacity-95 transition flex items-center justify-center gap-2">
+                        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                        <span>Activar Conexión</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        let currentStatus = null;
+        let activeTable = 'users';
+        let currentPage = 1;
+        let currentTotalPages = 1;
+        let currentSearch = '';
+        let searchTimeout = null;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            lucide.createIcons();
+            fetchStatus();
+            
+            // Atajo Ctrl+Enter en consola SQL
+            const sqlTextarea = document.getElementById("sql-query-input");
+            if (sqlTextarea) {
+                sqlTextarea.addEventListener("keydown", (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                        e.preventDefault();
+                        executeSqlQuery();
+                    }
+                });
+            }
+        });
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch("/api/admin/db/status");
+                const data = await res.json();
+                if (!data.ok) {
+                    showEngineError(data.error);
+                    return;
+                }
+                currentStatus = data;
+                updateHeaderStatus(data);
+                renderTablesList(data.tables);
+                updateDiagnosis(data);
+                
+                // Si aún no hemos cargado tabla activa, cargar users o la primera
+                if (data.tables && data.tables.length > 0) {
+                    const hasUsers = data.tables.find(t => t.name === 'users');
+                    loadTableData(hasUsers ? 'users' : data.tables[0].name);
+                }
+            } catch (err) {
+                console.error("Error al obtener estado:", err);
+            }
+        }
+
+        function updateHeaderStatus(data) {
+            const badge = document.getElementById("badge-engine");
+            const sub = document.getElementById("sub-engine-info");
+            const ping = document.getElementById("ping-text");
+            
+            if (ping) ping.textContent = `${data.ping_ms} ms`;
+            
+            if (badge) {
+                if (data.engine === "postgresql") {
+                    const label = data.is_render ? "Render Managed Postgres" : "PostgreSQL";
+                    badge.className = "text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/30 flex items-center gap-1.5";
+                    badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>${label}</span>`;
+                } else {
+                    badge.className = "text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-semibold border border-amber-500/30 flex items-center gap-1.5";
+                    badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span><span>SQLite Local</span>`;
+                }
+            }
+            
+            if (sub) {
+                sub.textContent = `${data.database} • ${data.host}`;
+            }
+            lucide.createIcons();
+        }
+
+        function renderTablesList(tables) {
+            const container = document.getElementById("tables-list-container");
+            const countLabel = document.getElementById("tables-count");
+            if (countLabel) countLabel.textContent = tables.length;
+            if (!container) return;
+            
+            container.innerHTML = "";
+            tables.forEach(t => {
+                const isSelected = t.name === activeTable;
+                const btn = document.createElement("button");
+                btn.className = `w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition ${
+                    isSelected 
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-bold' 
+                        : 'text-slate-300 hover:bg-slate-800/60 border border-transparent'
+                }`;
+                btn.onclick = () => {
+                    activeTable = t.name;
+                    currentPage = 1;
+                    renderTablesList(tables);
+                    loadTableData(t.name);
+                };
+                btn.innerHTML = `
+                    <div class="flex items-center gap-2 truncate">
+                        <i data-lucide="${t.name === 'users' ? 'users' : (t.name === 'workouts' ? 'calendar' : 'database')}" class="w-3.5 h-3.5 ${isSelected ? 'text-emerald-400' : 'text-slate-500'}"></i>
+                        <span class="truncate font-mono">${t.name}</span>
+                    </div>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded-md font-mono ${isSelected ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'}">${t.rows}</span>
+                `;
+                container.appendChild(btn);
+            });
+            lucide.createIcons();
+        }
+
+        async function loadTableData(tableName) {
+            activeTable = tableName;
+            const titleEl = document.getElementById("active-table-title");
+            const rowsEl = document.getElementById("active-table-rows");
+            const thead = document.getElementById("browser-thead");
+            const tbody = document.getElementById("browser-tbody");
+            const pageLabel = document.getElementById("current-page-label");
+            const paginationInfo = document.getElementById("pagination-info");
+            
+            if (titleEl) titleEl.innerHTML = `<i data-lucide="table" class="w-4 h-4 text-emerald-400"></i><span class="font-mono">${tableName}</span>`;
+            if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500"><i data-lucide="loader" class="w-4 h-4 animate-spin mx-auto mb-2 text-emerald-400"></i>Cargando registros de ${tableName}...</td></tr>`;
+            lucide.createIcons();
+
+            try {
+                const url = `/api/admin/db/table/${tableName}?page=${currentPage}&per_page=50&search=${encodeURIComponent(currentSearch)}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                if (!res.ok) {
+                    if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-rose-400 font-mono">Error: ${data.error || 'No se pudo cargar la tabla'}</td></tr>`;
+                    return;
+                }
+                
+                currentTotalPages = data.total_pages;
+                if (rowsEl) rowsEl.textContent = `${data.total_rows} filas`;
+                if (pageLabel) pageLabel.textContent = `${data.page} / ${data.total_pages}`;
+                if (paginationInfo) paginationInfo.textContent = `Mostrando ${data.rows.length} de ${data.total_rows} registros`;
+                
+                // Render headers
+                if (thead && data.columns) {
+                    thead.innerHTML = `<tr>${data.columns.map(c => `
+                        <th class="p-3 text-slate-300 font-bold border-r border-slate-800/80 last:border-r-0">
+                            <div class="flex items-center gap-1.5">
+                                <span>${c.name}</span>
+                                ${c.is_pk ? '<span class="text-[9px] px-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 font-mono">PK</span>' : ''}
+                                <span class="text-[9px] text-slate-500 lowercase font-normal">(${c.type})</span>
+                            </div>
+                        </th>
+                    `).join('')}</tr>`;
+                }
+
+                // Render rows
+                if (tbody) {
+                    if (data.rows.length === 0) {
+                        tbody.innerHTML = `<tr><td colspan="${data.columns.length || 1}" class="p-8 text-center text-slate-500">No hay registros en esta tabla.</td></tr>`;
+                    } else {
+                        tbody.innerHTML = data.rows.map(r => `
+                            <tr class="hover:bg-slate-800/40 transition">
+                                ${data.columns.map(c => {
+                                    let val = r[c.name];
+                                    if (val === null || val === undefined) val = '<span class="text-slate-600 italic">null</span>';
+                                    else if (typeof val === 'string' && val.length > 50) val = `<span title="${val.replace(/"/g, '&quot;')}">${val.substring(0, 47)}...</span>`;
+                                    return `<td class="p-3 border-r border-slate-800/50 last:border-r-0 truncate max-w-xs">${val}</td>`;
+                                }).join('')}
+                            </tr>
+                        `).join('');
+                    }
+                }
+            } catch (err) {
+                console.error("Error al cargar filas:", err);
+            }
+        }
+
+        function changePage(delta) {
+            const newPage = currentPage + delta;
+            if (newPage >= 1 && newPage <= currentTotalPages) {
+                currentPage = newPage;
+                loadTableData(activeTable);
+            }
+        }
+
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                const input = document.getElementById("browser-search");
+                currentSearch = input ? input.value.trim() : "";
+                currentPage = 1;
+                loadTableData(activeTable);
+            }, 300);
+        }
+
+        function switchViewTab(tab) {
+            const vBrowser = document.getElementById("view-browser");
+            const vSql = document.getElementById("view-sql");
+            const vRender = document.getElementById("view-render");
+            const bActions = document.getElementById("browser-actions");
+
+            const tBrowser = document.getElementById("tab-btn-browser");
+            const tSql = document.getElementById("tab-btn-sql");
+            const tRender = document.getElementById("tab-btn-render");
+
+            // Reset
+            [vBrowser, vSql, vRender].forEach(el => el.classList.add("hidden"));
+            [tBrowser, tSql, tRender].forEach(el => el.className = "px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition flex items-center gap-1.5");
+            if (bActions) bActions.classList.add("hidden");
+
+            if (tab === "browser") {
+                vBrowser.classList.remove("hidden");
+                tBrowser.className = "px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 font-bold border border-slate-700 transition flex items-center gap-1.5";
+                if (bActions) bActions.classList.remove("hidden");
+            } else if (tab === "sql") {
+                vSql.classList.remove("hidden");
+                tSql.className = "px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 font-bold border border-slate-700 transition flex items-center gap-1.5";
+            } else if (tab === "render") {
+                vRender.classList.remove("hidden");
+                tRender.className = "px-3 py-1.5 rounded-lg bg-slate-800 text-cyan-400 font-bold border border-slate-700 transition flex items-center gap-1.5";
+            }
+            lucide.createIcons();
+        }
+
+        function setQueryTemplate(sql) {
+            const input = document.getElementById("sql-query-input");
+            if (input) {
+                input.value = sql;
+                input.focus();
+            }
+        }
+
+        function runSnippet(type) {
+            switchViewTab("sql");
+            if (type === "users") {
+                setQueryTemplate("SELECT id, username, name, email, created_at FROM users ORDER BY id DESC LIMIT 20;");
+            } else if (type === "workouts") {
+                setQueryTemplate("SELECT w.id, u.username, w.date, w.title, COUNT(e.id) as total_ejercicios\nFROM workouts w\nJOIN users u ON u.id = w.user_id\nLEFT JOIN exercise_logs e ON e.workout_id = w.id\nGROUP BY w.id, u.username, w.date, w.title\nORDER BY w.date DESC LIMIT 20;");
+            } else if (type === "sessions") {
+                setQueryTemplate("SELECT s.token, u.username, s.created_at, s.expires_at\nFROM user_sessions s\nJOIN users u ON u.id = s.user_id\nORDER BY s.created_at DESC LIMIT 20;");
+            } else if (type === "stats") {
+                setQueryTemplate("SELECT 'users' as tabla, count(*) as total FROM users\nUNION ALL\nSELECT 'workouts', count(*) FROM workouts\nUNION ALL\nSELECT 'exercise_logs', count(*) FROM exercise_logs\nUNION ALL\nSELECT 'set_logs', count(*) FROM set_logs\nUNION ALL\nSELECT 'user_sessions', count(*) FROM user_sessions;");
+            }
+            executeSqlQuery();
+        }
+
+        async function executeSqlQuery() {
+            const input = document.getElementById("sql-query-input");
+            const statusEl = document.getElementById("sql-status-text");
+            const timingEl = document.getElementById("sql-timing");
+            const container = document.getElementById("sql-results-container");
+            const runBtn = document.getElementById("btn-run-sql");
+
+            const sql = input ? input.value.trim() : "";
+            if (!sql) return;
+
+            if (runBtn) runBtn.disabled = true;
+            if (statusEl) statusEl.textContent = "Ejecutando consulta...";
+            if (timingEl) timingEl.textContent = "";
+
+            try {
+                const res = await fetch("/api/admin/db/query", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query: sql })
+                });
+                const data = await res.json();
+
+                if (data.status === "error") {
+                    if (statusEl) statusEl.innerHTML = `<span class="text-rose-400 font-bold">Error en la consulta</span>`;
+                    if (timingEl) timingEl.textContent = `${data.duration_ms} ms`;
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 font-mono text-xs space-y-1">
+                                <div class="font-bold">Error de PostgreSQL / SQLite:</div>
+                                <div>${data.error}</div>
+                            </div>
+                        `;
+                    }
+                    return;
+                }
+
+                if (timingEl) timingEl.textContent = `${data.duration_ms} ms`;
+
+                if (data.type === "select") {
+                    if (statusEl) statusEl.innerHTML = `<span class="text-emerald-400 font-bold">${data.row_count} filas retornadas</span>`;
+                    if (container) {
+                        if (data.rows.length === 0) {
+                            container.innerHTML = `<p class="text-xs text-slate-500 font-mono">La consulta retornó 0 filas.</p>`;
+                        } else {
+                            container.innerHTML = `
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead class="bg-slate-900 border-b border-slate-800 text-slate-400 font-mono uppercase text-[10px]">
+                                        <tr>
+                                            ${data.columns.map(c => `<th class="p-2.5 border-r border-slate-800 last:border-r-0">${c}</th>`).join('')}
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800/60 font-mono text-[11px] text-slate-300">
+                                        ${data.rows.map(r => `
+                                            <tr class="hover:bg-slate-800/40">
+                                                ${data.columns.map(c => `<td class="p-2.5 border-r border-slate-800/50 last:border-r-0 truncate max-w-xs">${r[c] !== null ? r[c] : '<span class="text-slate-600 italic">null</span>'}</td>`).join('')}
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            `;
+                        }
+                    }
+                } else {
+                    if (statusEl) statusEl.innerHTML = `<span class="text-emerald-400 font-bold">Operación completada</span>`;
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs">
+                                ${data.message}
+                            </div>
+                        `;
+                    }
+                    // Refrescar tablas
+                    fetchStatus();
+                }
+            } catch (err) {
+                console.error("Error SQL:", err);
+            } finally {
+                if (runBtn) runBtn.disabled = false;
+            }
+        }
+
+        function updateDiagnosis(data) {
+            document.getElementById("diag-engine-label").textContent = data.version;
+            document.getElementById("diag-host").textContent = data.host;
+            document.getElementById("diag-db").textContent = data.database;
+            document.getElementById("diag-ssl").textContent = data.ssl;
+            document.getElementById("diag-ping").textContent = `${data.ping_ms} ms`;
+        }
+
+        function exportCurrentTable(format) {
+            window.open(`/api/admin/db/export/${activeTable}?format=${format}`, '_blank');
+        }
+
+        function openConnectModal() {
+            const modal = document.getElementById("modal-connect");
+            if (modal) modal.classList.remove("hidden");
+            const alert = document.getElementById("connect-alert-box");
+            if (alert) alert.classList.add("hidden");
+        }
+
+        function closeConnectModal() {
+            const modal = document.getElementById("modal-connect");
+            if (modal) modal.classList.add("hidden");
+        }
+
+        async function testConnectionInput() {
+            const input = document.getElementById("input-render-url");
+            const alert = document.getElementById("connect-alert-box");
+            const btn = document.getElementById("btn-test-conn");
+            const url = input ? input.value.trim() : "";
+
+            if (!url) {
+                alert.className = "p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs";
+                alert.textContent = "Por favor ingresa la URL de conexión.";
+                alert.classList.remove("hidden");
+                return;
+            }
+
+            if (btn) btn.disabled = true;
+            alert.className = "p-3 rounded-xl bg-slate-800 text-slate-300 text-xs font-mono";
+            alert.textContent = "Probando conexión a Render...";
+            alert.classList.remove("hidden");
+
+            try {
+                const res = await fetch("/api/admin/db/test", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert.className = "p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs";
+                    alert.innerHTML = `<strong>¡Conexión Exitosa!</strong> Latencia: ${data.latency_ms} ms. Servidor: ${data.version.split(',')[0]}`;
+                } else {
+                    alert.className = "p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs";
+                    alert.innerHTML = `<strong>Error de conexión:</strong> ${data.error}`;
+                }
+            } catch (err) {
+                alert.className = "p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs";
+                alert.textContent = "No se pudo conectar con el servidor.";
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function handleConnectSubmit(e) {
+            e.preventDefault();
+            const input = document.getElementById("input-render-url");
+            const alert = document.getElementById("connect-alert-box");
+            const btn = document.getElementById("btn-save-conn");
+            const url = input ? input.value.trim() : "";
+
+            if (btn) btn.disabled = true;
+
+            try {
+                const res = await fetch("/api/admin/db/connect", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert.className = "p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs";
+                    alert.textContent = data.message;
+                    setTimeout(() => {
+                        closeConnectModal();
+                        fetchStatus();
+                    }, 1000);
+                } else {
+                    alert.className = "p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs";
+                    alert.textContent = data.error;
+                }
+            } catch (err) {
+                alert.className = "p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs";
+                alert.textContent = "Error al intentar activar la conexión.";
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

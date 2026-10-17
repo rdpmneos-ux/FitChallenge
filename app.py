@@ -722,6 +722,79 @@ def reset():
         conn.commit()
     return jsonify({"status": "ok", "message": "Tus datos de entrenamiento han sido reiniciados"})
 
+# =========================================================================
+# GESTOR DE BASE DE DATOS (RENDER MANAGED POSTGRESQL & SQLITE)
+# =========================================================================
+import db_manager
+
+@app.route("/admin/db")
+@app.route("/db-manager")
+def admin_db_page():
+    return render_template("admin_db.html")
+
+@app.route("/api/admin/db/status", methods=["GET"])
+def api_admin_db_status():
+    status = db_manager.get_db_status()
+    return jsonify(status)
+
+@app.route("/api/admin/db/tables", methods=["GET"])
+def api_admin_db_tables():
+    schemas = db_manager.get_tables_schema()
+    return jsonify(schemas)
+
+@app.route("/api/admin/db/table/<table_name>", methods=["GET"])
+def api_admin_db_table_data(table_name):
+    page = int(request.args.get("page", 1))
+    per_page = int(request.args.get("per_page", 50))
+    search = request.args.get("search", "").strip()
+    order_by = request.args.get("order_by", "").strip() or None
+    direction = request.args.get("direction", "ASC").strip()
+    try:
+        data = db_manager.get_table_rows(table_name, page=page, per_page=per_page, search=search, order_by=order_by, direction=direction)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/api/admin/db/query", methods=["POST"])
+def api_admin_db_query():
+    body = request.get_json(silent=True) or {}
+    query = body.get("query", "").strip()
+    if not query:
+        return jsonify({"status": "error", "error": "Consulta SQL requerida"}), 400
+    res = db_manager.execute_query(query)
+    return jsonify(res)
+
+@app.route("/api/admin/db/test", methods=["POST"])
+def api_admin_db_test():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip()
+    res = db_manager.test_connection_url(url)
+    return jsonify(res)
+
+@app.route("/api/admin/db/connect", methods=["POST"])
+def api_admin_db_connect():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip()
+    ok, msg = db_manager.set_runtime_database_url(url)
+    if ok:
+        return jsonify({"ok": True, "message": msg})
+    return jsonify({"ok": False, "error": msg}), 400
+
+@app.route("/api/admin/db/export/<table_name>", methods=["GET"])
+def api_admin_db_export(table_name):
+    fmt = request.args.get("format", "json").lower()
+    try:
+        content, mime = db_manager.export_table(table_name, export_format=fmt)
+        from flask import Response
+        ext = "csv" if fmt == "csv" else "json"
+        return Response(
+            content,
+            mimetype=mime,
+            headers={"Content-Disposition": f"attachment; filename={table_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"}
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"Iniciando servicio de entrenamiento seguro en http://localhost:{port}")
