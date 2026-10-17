@@ -30,13 +30,18 @@ def get_gemini_api_key(client_key=None):
         return client_key.strip()
     return os.environ.get("GEMINI_API_KEY", "").strip()
 
+def _format_weight_label(w):
+    if w <= 0:
+        return "peso corporal"
+    return f"{w:g} kg"
+
 def calculate_progressive_overload(exercise_name, muscle_group, last_sets):
     """
-    Implements evidence-based Double Progression Model:
+    Implements evidence-based Double Progression Model respecting individual set loads:
     1. If user reached the ceiling of their rep range in all sets (e.g. >= 12 reps or >= 10 reps),
        increase weight (2.5% to 5%) and reset reps to the floor of the range (e.g. 8-10 reps).
     2. If user is within the range but hasn't maxed out all sets (e.g. 11, 9, 8 reps),
-       maintain the same weight and aim for +1 or +2 reps in the later sets.
+       maintain each set's individual weight and aim for +1 or +2 reps in the later sets.
     3. If user is lifting bodyweight (0 kg), recommend +1-2 reps or adding light weight (2.5-5 kg).
     4. If strength range (<6 reps), recommend microloading +1.25 to +2.5 kg.
     """
@@ -54,7 +59,7 @@ def calculate_progressive_overload(exercise_name, muscle_group, last_sets):
             "scientific_tip": "Prioriza siempre el rango de recorrido completo y el control del descenso (2-3 segundos)."
         }
 
-    # Extract metrics
+    # Extract metrics per set
     weights = [float(s.get("weight", 0) or 0) for s in last_sets]
     reps = [int(s.get("reps", 0) or 0) for s in last_sets]
     num_sets = len(last_sets)
@@ -72,6 +77,17 @@ def calculate_progressive_overload(exercise_name, muscle_group, last_sets):
     elif max_weight <= 20 and not is_bodyweight:
         weight_step = 1.25
 
+    # Check if all sets had identical weight or variable weights (e.g. ramp / pyramid)
+    unique_weights = list(dict.fromkeys(weights))
+    is_single_weight = (len(unique_weights) <= 1)
+
+    # Detailed representation of each set from previous session
+    set_details = [
+        f"S{idx+1}: {reps[idx]} reps con {_format_weight_label(weights[idx])}"
+        for idx in range(num_sets)
+    ]
+    detailed_breakdown = ", ".join(set_details)
+
     suggested_sets = []
     overload_type = "maintain_add_reps"
     summary = ""
@@ -81,8 +97,8 @@ def calculate_progressive_overload(exercise_name, muscle_group, last_sets):
     if is_bodyweight:
         if avg_reps >= 12:
             overload_type = "add_ballast"
-            summary = f"Añadir lastre de +{weight_step} kg o aumentar a {min_reps + 2} reps"
-            explanation = f"Completaste un promedio de {avg_reps:.0f} reps con peso corporal. Tu cuerpo ya se adaptó: puedes empezar a lastrarte con {weight_step} kg o buscar más repeticiones."
+            summary = f"Añadir lastre de +{weight_step:g} kg o aumentar a {min_reps + 2} reps"
+            explanation = f"Completaste un promedio de {avg_reps:.0f} reps con peso corporal. Tu cuerpo ya se adaptó: puedes empezar a lastrarte con {weight_step:g} kg o buscar más repeticiones."
             for idx in range(num_sets):
                 suggested_sets.append({
                     "set_number": idx + 1,
@@ -92,7 +108,7 @@ def calculate_progressive_overload(exercise_name, muscle_group, last_sets):
         else:
             overload_type = "add_reps"
             summary = f"Intentar +1 repetición en cada serie (objetivo: {min_reps + 1}+ reps)"
-            explanation = f"La sesión anterior hiciste entre {min_reps} y {max(reps)} reps. La sobrecarga progresiva hoy se logra sumando repeticiones totales."
+            explanation = f"La sesión anterior hiciste: {detailed_breakdown}. La sobrecarga progresiva hoy se logra sumando repeticiones totales."
             for idx in range(num_sets):
                 suggested_sets.append({
                     "set_number": idx + 1,
@@ -100,31 +116,47 @@ def calculate_progressive_overload(exercise_name, muscle_group, last_sets):
                     "weight": 0.0
                 })
 
-    # Case 2: User hit the top of the rep range in all sets (e.g., all sets >= 12 reps, or all >= 10)
+    # Case 2: User hit the top of the rep range in all sets (e.g., all sets >= 12 reps, or all >= 10 with 3+ sets)
     elif all(r >= 12 for r in reps) or (all(r >= 10 for r in reps) and num_sets >= 3):
         overload_type = "increase_weight"
-        new_weight = round(max_weight + weight_step, 2)
-        summary = f"Subir a {new_weight} kg (+{weight_step} kg) en rango de 8 a 10 reps"
-        explanation = f"¡Dominaste los {max_weight} kg en todas tus series ({min_reps}+ reps)! Corresponde aplicar sobrecarga por intensidad mecánica aumentando {weight_step} kg."
-        for idx in range(num_sets):
-            # When jumping in weight, drop rep target to bottom of hypertrophy bracket (8-10)
-            suggested_sets.append({
-                "set_number": idx + 1,
-                "reps": max(8, min(10, reps[idx] - 2)),
-                "weight": new_weight
-            })
+        if is_single_weight:
+            new_weight = round(max_weight + weight_step, 2)
+            summary = f"Subir a {_format_weight_label(new_weight)} (+{weight_step:g} kg) en rango de 8 a 10 reps"
+            explanation = f"¡Dominaste los {_format_weight_label(max_weight)} en todas tus series ({min_reps}+ reps)! Corresponde aplicar sobrecarga por intensidad aumentando {weight_step:g} kg."
+            for idx in range(num_sets):
+                suggested_sets.append({
+                    "set_number": idx + 1,
+                    "reps": max(8, min(10, reps[idx] - 2)),
+                    "weight": new_weight
+                })
+        else:
+            summary = f"Aumentar carga (+{weight_step:g} kg) en tus series de trabajo"
+            explanation = f"La sesión anterior registraste: {detailed_breakdown}. Al dominar el rango de repeticiones, puedes subir {weight_step:g} kg en tus series de trabajo."
+            for idx in range(num_sets):
+                suggested_sets.append({
+                    "set_number": idx + 1,
+                    "reps": max(8, min(10, reps[idx] - 2)),
+                    "weight": round(weights[idx] + weight_step, 2)
+                })
 
-    # Case 3: In the middle of rep range -> Keep weight, aim for +1-2 reps on weaker sets
+    # Case 3: In the middle of rep range -> Maintain each set's base load, aim for +1-2 reps on weaker sets
     else:
         overload_type = "increase_reps"
-        summary = f"Mantener {max_weight} kg y superar las {sum(reps)} reps totales (+1 rep en cada serie)"
-        explanation = f"La sesión anterior lograste series de {', '.join(str(r) for r in reps)} reps con {max_weight} kg. La meta de hoy es ganar 1 o 2 repeticiones en las series intermedias antes de subir peso."
+        if is_single_weight:
+            summary = f"Mantener {_format_weight_label(max_weight)} y superar las {sum(reps)} reps totales (+1 rep en cada serie)"
+            explanation = f"La sesión anterior lograste series de {', '.join(str(r) for r in reps)} reps con {_format_weight_label(max_weight)}. La meta de hoy es ganar 1 o 2 repeticiones en las series intermedias antes de subir peso."
+        else:
+            summary = f"Superar las {sum(reps)} reps totales manteniendo tus cargas ({detailed_breakdown})"
+            explanation = f"La sesión anterior registraste: {detailed_breakdown} (peso máximo: {_format_weight_label(max_weight)}). La meta de hoy es mantener tus pesos de trabajo y buscar ganar 1 o 2 repeticiones en tus series para acumular mayor volumen efectivo."
+
         for idx in range(num_sets):
-            target_r = reps[idx] + (1 if idx > 0 or reps[idx] < 12 else 0)
+            # Target +1 rep on sets that haven't hit ceiling (12 reps)
+            r = reps[idx]
+            target_r = r + 1 if (idx > 0 or r < 12) else r
             suggested_sets.append({
                 "set_number": idx + 1,
                 "reps": target_r,
-                "weight": max_weight
+                "weight": weights[idx]  # Preserve each set's actual weight!
             })
 
     scientific_tip = (

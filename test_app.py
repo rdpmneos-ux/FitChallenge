@@ -2,6 +2,8 @@ import unittest
 import json
 import os
 import uuid
+
+os.environ["TESTING"] = "1"
 import app
 import models
 
@@ -557,6 +559,46 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         routine_data = json.loads(res_routine.data)
         self.assertEqual(routine_data["status"], "ok")
         self.assertEqual(len(routine_data["workout"]["exercises"]), 2)
+
+    def test_progressive_overload_multi_weight_individual_sets(self):
+        token, user = self.register_and_get_token("pyramid_user", "password123", "Pyramid Lifter")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Log exercise with different weights per set (e.g. Set 1: 35kg, Set 2 & 3: 40kg)
+        res_log = self.client.post("/api/exercise", headers=headers, json={
+            "date": "2026-10-14",
+            "exercise_name": "Press Inclinado con Mancuernas",
+            "muscle_group": "Pecho",
+            "sets": [
+                {"reps": 16, "weight": 35.0},
+                {"reps": 12, "weight": 40.0},
+                {"reps": 8, "weight": 40.0}
+            ]
+        })
+        self.assertEqual(res_log.status_code, 200)
+
+        # Request progressive overload suggestion for the next session
+        res_po = self.client.post("/api/ai/progressive_overload", headers=headers, json={
+            "exercise_name": "Press Inclinado con Mancuernas",
+            "muscle_group": "Pecho",
+            "before_date": "2026-10-17"
+        })
+        self.assertEqual(res_po.status_code, 200)
+        po_data = json.loads(res_po.data)
+        self.assertEqual(po_data["status"], "ok")
+        target = po_data["target"]
+        
+        # Verify that Set 1 preserves 35.0 kg, and Set 2 and 3 preserve 40.0 kg
+        suggested_sets = target["suggested_sets"]
+        self.assertEqual(len(suggested_sets), 3)
+        self.assertEqual(suggested_sets[0]["weight"], 35.0)
+        self.assertEqual(suggested_sets[1]["weight"], 40.0)
+        self.assertEqual(suggested_sets[2]["weight"], 40.0)
+        
+        # Verify explanation breakdown mentions 35 kg and 40 kg explicitly
+        self.assertIn("35 kg", target["explanation"])
+        self.assertIn("40 kg", target["explanation"])
+        self.assertIn("S1: 16 reps con 35 kg", target["explanation"])
 
 if __name__ == "__main__":
     unittest.main()

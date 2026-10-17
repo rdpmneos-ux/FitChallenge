@@ -1236,8 +1236,11 @@ function onModalExerciseInput(val) {
                 const dObj = parseLocalDate(lastSession.date);
                 const dateFmt = `${dObj.getDate()} de ${MONTH_NAMES_ES[dObj.getMonth()]}`;
                 const st = lastSession.stats;
-                const weightPart = st.max_weight > 0 ? ` con hasta ${st.max_weight} kg` : " (peso corporal)";
-                summary.innerHTML = `<strong>${dateFmt}</strong>: ${st.total_sets} series, ${st.total_reps} reps totales${weightPart}.`;
+                let setsBreakdown = "";
+                if (lastSession.sets && lastSession.sets.length > 0) {
+                    setsBreakdown = " (" + lastSession.sets.map((s, i) => `S${i+1}: ${s.reps}×${s.weight > 0 ? s.weight + 'kg' : 'peso corporal'}`).join(", ") + ")";
+                }
+                summary.innerHTML = `<strong>${dateFmt}</strong>: ${st.total_sets} series${setsBreakdown} · ${st.total_reps} reps totales.`;
                 banner.classList.remove("hidden");
 
                 // Fetch AI Progressive Overload Recommendation
