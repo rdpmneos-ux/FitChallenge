@@ -601,6 +601,96 @@ def add_exercise():
         workout_data = models.get_workout_details(row, conn)
         return jsonify({"workout": workout_data, "feedback": feedback})
 
+@app.route("/api/exercise/<int:exercise_id>", methods=["PUT"])
+def update_exercise(exercise_id):
+    user, err = require_auth()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    exercise_name = sanitize_str(data.get("exercise_name", ""), max_len=80)
+    muscle_group = sanitize_str(data.get("muscle_group", "General"), max_len=40, default="General")
+    notes = sanitize_str(data.get("notes", ""), max_len=500, default="")
+    sets = data.get("sets", [])
+
+    if not exercise_name:
+        return jsonify({"error": "Nombre de ejercicio requerido"}), 400
+
+    if not isinstance(sets, list) or len(sets) == 0:
+        return jsonify({"error": "Debes agregar al menos una serie"}), 400
+
+    with models.get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT el.id, el.workout_id, w.date
+            FROM exercise_logs el
+            JOIN workouts w ON el.workout_id = w.id
+            WHERE el.id = ? AND w.user_id = ?
+        """, (exercise_id, user["id"]))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Ejercicio no encontrado o no autorizado"}), 404
+
+        workout_id = row["workout_id"]
+        date_str = row["date"]
+
+        # Update exercise log metadata
+        cur.execute("""
+            UPDATE exercise_logs
+            SET exercise_name = ?, muscle_group = ?, notes = ?
+            WHERE id = ?
+        """, (exercise_name, muscle_group, notes, exercise_id))
+
+        # Replace existing set logs
+        cur.execute("DELETE FROM set_logs WHERE exercise_log_id = ?", (exercise_id,))
+        for idx, s in enumerate(sets[:50], start=1):
+            try:
+                reps = max(1, min(int(s.get("reps", 0)), 500))
+                weight = max(0.0, min(float(s.get("weight", 0) or 0), 1000.0))
+                rpe_raw = s.get("rpe")
+                rpe = max(1.0, min(float(rpe_raw), 10.0)) if rpe_raw is not None and str(rpe_raw).strip() != "" else None
+            except (ValueError, TypeError):
+                reps = 10
+                weight = 0.0
+                rpe = None
+
+            cur.execute("""
+                INSERT INTO set_logs (exercise_log_id, set_number, reps, weight, rpe)
+                VALUES (?, ?, ?, ?, ?)
+            """, (exercise_id, idx, reps, weight, rpe))
+
+        conn.commit()
+
+        # Check performance against previous session prior to this workout
+        feedback = {"achieved": True, "message": "¡Ejercicio actualizado correctamente!"}
+        try:
+            cur.execute("""
+                SELECT el.id, w.date
+                FROM exercise_logs el
+                JOIN workouts w ON el.workout_id = w.id
+                WHERE w.user_id = ? AND LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+                  AND (w.date < ? OR (w.date = ? AND el.id < ?))
+                ORDER BY w.date DESC, el.id DESC
+                LIMIT 1
+            """, (user["id"], exercise_name, date_str, date_str, exercise_id))
+            prev_row = cur.fetchone()
+            if prev_row:
+                cur.execute("""
+                    SELECT set_number, reps, weight, rpe 
+                    FROM set_logs 
+                    WHERE exercise_log_id = ? 
+                    ORDER BY set_number ASC
+                """, (prev_row["id"],))
+                prev_sets = [dict(r) for r in cur.fetchall()]
+                achieved, msg = ai_coach.evaluate_performance(sets, prev_sets, exercise_name)
+                feedback = {"achieved": achieved, "message": msg}
+        except Exception as eval_err:
+            print("AI Evaluation notice on update:", eval_err)
+
+        cur.execute("SELECT * FROM workouts WHERE id = ?", (workout_id,))
+        w_row = cur.fetchone()
+        workout_data = models.get_workout_details(w_row, conn) if w_row else None
+        return jsonify({"workout": workout_data, "feedback": feedback})
+
 @app.route("/api/exercise/<int:exercise_id>", methods=["DELETE"])
 def delete_exercise(exercise_id):
     user, err = require_auth()
@@ -938,7 +1028,7 @@ def api_ai_coach_chat():
     if not message:
         return jsonify({"error": "Mensaje requerido"}), 400
 
-    # Collect user's recent workouts summary for context
+    # Collect user's recent workouts summary and real exercise catalog for context
     recent_workouts = []
     with models.get_db() as conn:
         cur = conn.cursor()
@@ -959,16 +1049,28 @@ def api_ai_coach_chat():
         for d, items in list(by_date.items())[:5]:
             recent_workouts.append(f"Sesión {d}: " + "; ".join(items[:4]))
 
+    exercise_catalog = models.get_user_recent_exercises_summary(user["id"])
+    catalog_lines = []
+    for ex in exercise_catalog:
+        sets_desc = ", ".join([f"S{s['set_number']}: {s['reps']}r x {s['weight']}kg" for s in ex.get("sets", [])])
+        catalog_lines.append(f"- {ex['name']} ({ex['muscle_group']}): Peso máx {ex['max_weight']}kg [{sets_desc}] (Fecha: {ex['date']})")
+
     user_context = {
         "name": user.get("name") or user.get("username", "Atleta"),
-        "recent_workouts": recent_workouts
+        "recent_workouts": recent_workouts,
+        "exercise_catalog": exercise_catalog,
+        "catalog_lines": catalog_lines
     }
 
     system_prompt = f"""Eres FitCoach IA, el entrenador personal y experto en ciencias del deporte y nutrición de FitChallenge.
 Tu alumno se llama {user_context['name']}.
 Fecha actual: {datetime.now().strftime('%Y-%m-%d')}.
+
 Historial reciente de entrenamientos del alumno:
 {chr(10).join(recent_workouts) if recent_workouts else 'Sin sesiones registradas todavía.'}
+
+Historial y pesos reales de ejercicios del alumno:
+{chr(10).join(catalog_lines) if catalog_lines else 'Sin ejercicios registrados aún.'}
 
 Capacidades y rol:
 1. Responde a CUALQUIER consulta, duda o pregunta del usuario: sobrecargas, rutinas, técnicas de ejercicios (sentadilla hack, press de banca, peso muerto), nutrición deportiva (proteínas, calorías, déficit, volumen), suplementación (creatina, whey, cafeína), tiempos de descanso, prevención de lesiones y recuperación.
@@ -980,6 +1082,9 @@ Capacidades y rol:
   {{"name": "Nombre del Ejercicio", "muscle": "Piernas", "sets": 3, "target_reps": 10, "weight": 60.0}}
 ]
 ```
+REGLA OBLIGATORIA PARA RUTINAS Y CARGAS:
+- Diseña la rutina usando preferentemente los ejercicios que el alumno ya tiene en su historial o variantes para grupos musculares descansados.
+- En 'weight', coloca SIEMPRE el peso real que el usuario ya levanta según su historial (o un ligero aumento de +2.5kg a +5kg para sobrecarga progresiva si ya dominó repeticiones). NUNCA asignes pesos bajos por defecto si el usuario ya registró cargas superiores.
 Los grupos musculares válidos son: Piernas, Pecho, Espalda, Hombros, Brazos, Core.
 """
 

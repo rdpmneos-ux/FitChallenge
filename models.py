@@ -1235,3 +1235,63 @@ def set_app_setting(key, value, db_path=None):
         print("Error saving app setting:", e)
         return False
 
+def get_user_recent_exercises_summary(user_id, db_path=None):
+    """
+    Returns a rich profile of the user's exercises with their most recent date,
+    actual sets, weights, and reps.
+    """
+    if db_path is None:
+        db_path = DB_PATH
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT el.exercise_name, el.muscle_group, w.date, el.id as exercise_log_id
+            FROM exercise_logs el
+            JOIN workouts w ON el.workout_id = w.id
+            WHERE w.user_id = ?
+            ORDER BY w.date DESC, el.id DESC
+        """, (user_id,))
+        rows = cur.fetchall()
+
+        seen_exercises = {}
+        for r in rows:
+            name_clean = r["exercise_name"].strip()
+            key = name_clean.lower()
+            if key not in seen_exercises:
+                cur.execute("""
+                    SELECT set_number, reps, weight, rpe 
+                    FROM set_logs 
+                    WHERE exercise_log_id = ? 
+                    ORDER BY set_number ASC
+                """, (r["exercise_log_id"],))
+                sets = [dict(s) for s in cur.fetchall()]
+                weights = [float(s.get("weight", 0) or 0) for s in sets]
+                reps = [int(s.get("reps", 0) or 0) for s in sets]
+                recent_max = max(weights) if weights else 0.0
+
+                # Query all-time max weight for this exercise to never downgrade user strength
+                cur.execute("""
+                    SELECT MAX(sl.weight) as all_time_max
+                    FROM set_logs sl
+                    JOIN exercise_logs el ON sl.exercise_log_id = el.id
+                    JOIN workouts w ON el.workout_id = w.id
+                    WHERE w.user_id = ? AND LOWER(TRIM(el.exercise_name)) = LOWER(TRIM(?))
+                """, (user_id, name_clean))
+                atm_row = cur.fetchone()
+                atm_val = float(atm_row["all_time_max"]) if atm_row and atm_row["all_time_max"] is not None else 0.0
+                effective_max = max(recent_max, atm_val)
+
+                seen_exercises[key] = {
+                    "name": name_clean,
+                    "muscle_group": r["muscle_group"],
+                    "date": r["date"],
+                    "sets": sets,
+                    "max_weight": effective_max,
+                    "recent_weight": recent_max,
+                    "all_time_max": atm_val,
+                    "total_reps": sum(reps) if reps else 0,
+                    "total_sets": len(sets)
+                }
+        return list(seen_exercises.values())
+
+

@@ -529,13 +529,41 @@ def clean_routine_markdown(text):
     cleaned = re.sub(r'```(?:json)?(?:\s*routine)?\s*\{[\s\S]*?\}\s*```', '', text, flags=re.IGNORECASE)
     return cleaned.strip()
 
+def _get_user_exercise_load(name, default_weight, default_sets, default_reps, catalog):
+    """
+    Finds the user's logged metrics for an exercise to avoid generic placeholders.
+    """
+    if not catalog or not isinstance(catalog, list):
+        return default_weight, default_sets, default_reps
+
+    clean_target = name.strip().lower()
+    best_match = None
+    for ex in catalog:
+        c_name = ex.get("name", "").strip().lower()
+        if c_name == clean_target or clean_target in c_name or c_name in clean_target:
+            best_match = ex
+            break
+
+    if best_match:
+        logged_max = float(best_match.get("max_weight", 0) or 0)
+        w = logged_max if logged_max > 0 else default_weight
+        s_count = int(best_match.get("total_sets", 0) or default_sets)
+        s_count = max(2, min(s_count, 5))
+        logged_reps = [int(s.get("reps", 10) or 10) for s in best_match.get("sets", [])]
+        avg_r = int(sum(logged_reps) / len(logged_reps)) if logged_reps else default_reps
+        return w, s_count, avg_r
+
+    return default_weight, default_sets, default_reps
+
 def generate_local_coach_response(user_message, user_context):
     """
     Expanded sports science knowledge base covering routines, nutrition,
     biomechanics, injuries, supplements, and progressive overload.
+    Routines are dynamically customized with the user's actual weights and history.
     """
     msg = (user_message or "").lower()
     user_name = user_context.get("name", "Campeón")
+    catalog = user_context.get("exercise_catalog", [])
 
     # 1. SUPPLEMENTS: Creatina, Cafeína, Suplementos (Check first to avoid false positives)
     if any(w in msg for w in ["creatina", "suplemento", "suplementos", "cafeina", "cafeína", "whey", "preentreno", "pre-entreno"]):
@@ -566,22 +594,28 @@ def generate_local_coach_response(user_message, user_context):
 
     # 3. ROUTINE: Piernas / Cuádriceps / Femorales
     if any(w in msg for w in ["pierna", "cuadriceps", "femoral", "sentadilla", "legs", "hacka"]):
-        return f"""¡Excelente día de piernas, {user_name}! Aquí tienes una rutina enfocada en cuádriceps y femorales con estímulo óptimo de tensión mecánica:
+        w_hack, s_hack, r_hack = _get_user_exercise_load("Sentadilla Hack (Hacka)", 80.0, 4, 8, catalog)
+        w_pren, s_pren, r_pren = _get_user_exercise_load("Prensa de Piernas", 120.0, 3, 10, catalog)
+        w_fem, s_fem, r_fem = _get_user_exercise_load("Curl Femoral Tumbado", 40.0, 4, 10, catalog)
+        w_ext, s_ext, r_ext = _get_user_exercise_load("Extensiones de Cuádriceps", 45.0, 3, 12, catalog)
+        w_gem, s_gem, r_gem = _get_user_exercise_load("Elevación de Talones", 50.0, 4, 15, catalog)
 
-### 🦵 Rutina de Piernas Completa
-1. **Sentadilla Hack (Hacka)** (Piernas) - 4 series x 8-10 reps (Descanso: 3 min)
-2. **Prensa de Piernas** (Piernas) - 3 series x 10-12 reps
-3. **Curl Femoral Tumbado o Sentado** (Piernas) - 4 series x 10-12 reps
-4. **Extensiones de Cuádriceps** (Piernas) - 3 series x 12-15 reps (Pausa de 1s arriba)
-5. **Elevaciones de Talones para Gemelos** (Piernas) - 4 series x 15 reps
+        return f"""¡Excelente día de piernas, {user_name}! He preparado esta rutina adaptada a tus marcas registradas para máximo estímulo:
+
+### 🦵 Rutina de Piernas (Basada en tu Historial)
+1. **Sentadilla Hack (Hacka)** (Piernas) - {s_hack} series x {r_hack} reps ({_format_weight_label(w_hack)}, Descanso: 3 min)
+2. **Prensa de Piernas** (Piernas) - {s_pren} series x {r_pren} reps ({_format_weight_label(w_pren)})
+3. **Curl Femoral Tumbado** (Piernas) - {s_fem} series x {r_fem} reps ({_format_weight_label(w_fem)})
+4. **Extensiones de Cuádriceps** (Piernas) - {s_ext} series x {r_ext} reps ({_format_weight_label(w_ext)})
+5. **Elevación de Talones** (Piernas) - {s_gem} series x {r_gem} reps ({_format_weight_label(w_gem)})
 
 ```json routine
 [
-  {{"name": "Sentadilla Hack (Hacka)", "muscle": "Piernas", "sets": 4, "target_reps": 8, "weight": 80.0}},
-  {{"name": "Prensa de Piernas", "muscle": "Piernas", "sets": 3, "target_reps": 10, "weight": 120.0}},
-  {{"name": "Curl Femoral Tumbado", "muscle": "Piernas", "sets": 4, "target_reps": 10, "weight": 40.0}},
-  {{"name": "Extensiones de Cuádriceps", "muscle": "Piernas", "sets": 3, "target_reps": 12, "weight": 45.0}},
-  {{"name": "Elevación de Talones", "muscle": "Piernas", "sets": 4, "target_reps": 15, "weight": 50.0}}
+  {{"name": "Sentadilla Hack (Hacka)", "muscle": "Piernas", "sets": {s_hack}, "target_reps": {r_hack}, "weight": {w_hack}}},
+  {{"name": "Prensa de Piernas", "muscle": "Piernas", "sets": {s_pren}, "target_reps": {r_pren}, "weight": {w_pren}}},
+  {{"name": "Curl Femoral Tumbado", "muscle": "Piernas", "sets": {s_fem}, "target_reps": {r_fem}, "weight": {w_fem}}},
+  {{"name": "Extensiones de Cuádriceps", "muscle": "Piernas", "sets": {s_ext}, "target_reps": {r_ext}, "weight": {w_ext}}},
+  {{"name": "Elevación de Talones", "muscle": "Piernas", "sets": {s_gem}, "target_reps": {r_gem}, "weight": {w_gem}}}
 ]
 ```
 
@@ -589,24 +623,31 @@ def generate_local_coach_response(user_message, user_context):
 
     # 4. ROUTINE: Espalda / Pull / Tirón
     if any(w in msg for w in ["espalda", "pull", "tiron", "tirón", "dorsal", "remo", "dominada"]):
-        return f"""¡A construir una espalda densa y ancha, {user_name}! Aquí tienes tu rutina de tirón:
+        w_jal, s_jal, r_jal = _get_user_exercise_load("Jalón al Pecho en Polea", 55.0, 4, 8, catalog)
+        w_rem, s_rem, r_rem = _get_user_exercise_load("Remo con Barra", 60.0, 4, 8, catalog)
+        w_gir, s_gir, r_gir = _get_user_exercise_load("Remo en Polea Baja", 50.0, 3, 10, catalog)
+        w_pul, s_pul, r_pul = _get_user_exercise_load("Pullover en Polea Alta", 25.0, 3, 12, catalog)
+        w_fac, s_fac, r_fac = _get_user_exercise_load("Face Pulls", 20.0, 3, 15, catalog)
+        w_cur, s_cur, r_cur = _get_user_exercise_load("Curl con Barra Z", 25.0, 3, 10, catalog)
+
+        return f"""¡A construir una espalda densa y ancha, {user_name}! Aquí tienes tu rutina de tirón ajustada a tus pesos de trabajo:
 
 ### 🦅 Rutina de Espalda y Bíceps (Pull)
-1. **Dominadas o Jalón al Pecho** (Espalda) - 4 series x 8-10 reps (Descanso: 2 min)
-2. **Remo con Barra o con Mancuerna** (Espalda) - 4 series x 8-10 reps
-3. **Remo en Polea Baja (Gironda)** (Espalda) - 3 series x 10-12 reps
-4. **Pullover en Polea Alta** (Espalda) - 3 series x 12-15 reps
-5. **Face Pulls** (Hombros / Espalda) - 3 series x 15 reps
-6. **Curl de Bíceps con Barra Z** (Brazos) - 3 series x 10-12 reps
+1. **Jalón al Pecho en Polea** (Espalda) - {s_jal} series x {r_jal} reps ({_format_weight_label(w_jal)})
+2. **Remo con Barra** (Espalda) - {s_rem} series x {r_rem} reps ({_format_weight_label(w_rem)})
+3. **Remo en Polea Baja** (Espalda) - {s_gir} series x {r_gir} reps ({_format_weight_label(w_gir)})
+4. **Pullover en Polea Alta** (Espalda) - {s_pul} series x {r_pul} reps ({_format_weight_label(w_pul)})
+5. **Face Pulls** (Hombros) - {s_fac} series x {r_fac} reps ({_format_weight_label(w_fac)})
+6. **Curl con Barra Z** (Brazos) - {s_cur} series x {r_cur} reps ({_format_weight_label(w_cur)})
 
 ```json routine
 [
-  {{"name": "Jalón al Pecho en Polea", "muscle": "Espalda", "sets": 4, "target_reps": 8, "weight": 55.0}},
-  {{"name": "Remo con Barra", "muscle": "Espalda", "sets": 4, "target_reps": 8, "weight": 60.0}},
-  {{"name": "Remo en Polea Baja", "muscle": "Espalda", "sets": 3, "target_reps": 10, "weight": 50.0}},
-  {{"name": "Pullover en Polea Alta", "muscle": "Espalda", "sets": 3, "target_reps": 12, "weight": 25.0}},
-  {{"name": "Face Pulls", "muscle": "Hombros", "sets": 3, "target_reps": 15, "weight": 20.0}},
-  {{"name": "Curl con Barra Z", "muscle": "Brazos", "sets": 3, "target_reps": 10, "weight": 25.0}}
+  {{"name": "Jalón al Pecho en Polea", "muscle": "Espalda", "sets": {s_jal}, "target_reps": {r_jal}, "weight": {w_jal}}},
+  {{"name": "Remo con Barra", "muscle": "Espalda", "sets": {s_rem}, "target_reps": {r_rem}, "weight": {w_rem}}},
+  {{"name": "Remo en Polea Baja", "muscle": "Espalda", "sets": {s_gir}, "target_reps": {r_gir}, "weight": {w_gir}}},
+  {{"name": "Pullover en Polea Alta", "muscle": "Espalda", "sets": {s_pul}, "target_reps": {r_pul}, "weight": {w_pul}}},
+  {{"name": "Face Pulls", "muscle": "Hombros", "sets": {s_fac}, "target_reps": {r_fac}, "weight": {w_fac}}},
+  {{"name": "Curl con Barra Z", "muscle": "Brazos", "sets": {s_cur}, "target_reps": {r_cur}, "weight": {w_cur}}}
 ]
 ```
 
@@ -614,22 +655,28 @@ def generate_local_coach_response(user_message, user_context):
 
     # 5. ROUTINE: Brazos / Bíceps / Tríceps
     if any(w in msg for w in ["brazo", "brazos", "bicep", "bícep", "tricep", "trícep"]):
-        return f"""¡Sesión dedicada de brazos, {user_name}! Diseñada para maximizar el pico del bíceps y las 3 cabezas del tríceps:
+        w_fra, s_fra, r_fra = _get_user_exercise_load("Press Francés con Barra Z", 25.0, 4, 10, catalog)
+        w_curz, s_curz, r_curz = _get_user_exercise_load("Curl con Barra Z", 25.0, 4, 8, catalog)
+        w_tri, s_tri, r_tri = _get_user_exercise_load("Extensiones de Tríceps con Cuerda", 20.0, 3, 12, catalog)
+        w_mar, s_mar, r_mar = _get_user_exercise_load("Curl Martillo con Mancuernas", 14.0, 3, 10, catalog)
+        w_fon, s_fon, r_fon = _get_user_exercise_load("Fondos en Paralelas", 0.0, 3, 10, catalog)
+
+        return f"""¡Sesión de brazos, {user_name}! Ajustada a tus marcas de trabajo para congestión e hipertrofia:
 
 ### 💪 Rutina de Brazos (Bíceps + Tríceps)
-1. **Press Francés con Mancuernas o Barra Z** (Brazos) - 4 series x 10-12 reps
-2. **Curl con Barra Z de Pie** (Brazos) - 4 series x 8-10 reps
-3. **Extensiones de Tríceps en Polea con Cuerda** (Brazos) - 3 series x 12-15 reps
-4. **Curl Martillo con Mancuernas** (Brazos) - 3 series x 10-12 reps (para braquial y antebrazo)
-5. **Fondos en Paralelas o en Banco** (Brazos) - 3 series al fallo técnico
+1. **Press Francés con Barra Z** (Brazos) - {s_fra} series x {r_fra} reps ({_format_weight_label(w_fra)})
+2. **Curl con Barra Z** (Brazos) - {s_curz} series x {r_curz} reps ({_format_weight_label(w_curz)})
+3. **Extensiones de Tríceps con Cuerda** (Brazos) - {s_tri} series x {r_tri} reps ({_format_weight_label(w_tri)})
+4. **Curl Martillo con Mancuernas** (Brazos) - {s_mar} series x {r_mar} reps ({_format_weight_label(w_mar)})
+5. **Fondos en Paralelas** (Brazos) - {s_fon} series x {r_fon} reps ({_format_weight_label(w_fon)})
 
 ```json routine
 [
-  {{"name": "Press Francés con Barra Z", "muscle": "Brazos", "sets": 4, "target_reps": 10, "weight": 25.0}},
-  {{"name": "Curl con Barra Z", "muscle": "Brazos", "sets": 4, "target_reps": 8, "weight": 25.0}},
-  {{"name": "Extensiones de Tríceps con Cuerda", "muscle": "Brazos", "sets": 3, "target_reps": 12, "weight": 20.0}},
-  {{"name": "Curl Martillo con Mancuernas", "muscle": "Brazos", "sets": 3, "target_reps": 10, "weight": 14.0}},
-  {{"name": "Fondos en Paralelas", "muscle": "Brazos", "sets": 3, "target_reps": 10, "weight": 0.0}}
+  {{"name": "Press Francés con Barra Z", "muscle": "Brazos", "sets": {s_fra}, "target_reps": {r_fra}, "weight": {w_fra}}},
+  {{"name": "Curl con Barra Z", "muscle": "Brazos", "sets": {s_curz}, "target_reps": {r_curz}, "weight": {w_curz}}},
+  {{"name": "Extensiones de Tríceps con Cuerda", "muscle": "Brazos", "sets": {s_tri}, "target_reps": {r_tri}, "weight": {w_tri}}},
+  {{"name": "Curl Martillo con Mancuernas", "muscle": "Brazos", "sets": {s_mar}, "target_reps": {r_mar}, "weight": {w_mar}}},
+  {{"name": "Fondos en Paralelas", "muscle": "Brazos", "sets": {s_fon}, "target_reps": {r_fon}, "weight": {w_fon}}}
 ]
 ```
 
@@ -637,39 +684,35 @@ def generate_local_coach_response(user_message, user_context):
 
     # 6. ROUTINE: General Torso / Pecho / Push / Rutina para hoy
     if any(w in msg for w in ["rutina", "entrenar", "push", "empuje", "pecho", "hoy", "crear", "diseñ"]):
-        return f"""¡Excelente, {user_name}! Aquí tienes una propuesta de rutina equilibrada de hipertrofia y fuerza para hoy:
+        w_ban, s_ban, r_ban = _get_user_exercise_load("Press de Banca", 60.0, 4, 8, catalog)
+        w_inc, s_inc, r_inc = _get_user_exercise_load("Press Inclinado con Mancuernas", 40.0, 3, 10, catalog)
+        w_mil, s_mil, r_mil = _get_user_exercise_load("Press Militar con Barra", 40.0, 3, 8, catalog)
+        w_lat, s_lat, r_lat = _get_user_exercise_load("Elevaciones Laterales", 8.0, 4, 12, catalog)
+        w_trie, s_trie, r_trie = _get_user_exercise_load("Extensiones de Tríceps con Cuerda", 20.0, 3, 12, catalog)
+        w_fond, s_fond, r_fond = _get_user_exercise_load("Fondos en Paralelas", 0.0, 3, 10, catalog)
 
-### 🏋️ Rutina de Torso (Pecho + Hombros + Tríceps)
-1. **Press de Banca** (Pecho) - 4 series x 8-10 reps (Descanso: 2 min)
-2. **Press Inclinado con Mancuernas** (Pecho) - 3 series x 10-12 reps
-3. **Press Militar con Barra** (Hombros) - 3 series x 8-10 reps
-4. **Elevaciones Laterales en Polea o Mancuerna** (Hombros) - 4 series x 12-15 reps
-5. **Extensiones de Tríceps con Cuerda** (Brazos) - 3 series x 12-15 reps
-6. **Fondos en Paralelas** (Pecho / Tríceps) - 3 series al fallo técnico
+        return f"""¡Excelente, {user_name}! He diseñado esta rutina de empuje y torso basada en tus sesiones previas y pesos reales:
+
+### 🏋️ Rutina de Torso (Basada en tus Marcas Reales)
+1. **Press de Banca** (Pecho) - {s_ban} series x {r_ban} reps ({_format_weight_label(w_ban)}, Descanso: 2 min)
+2. **Press Inclinado con Mancuernas** (Pecho) - {s_inc} series x {r_inc} reps ({_format_weight_label(w_inc)})
+3. **Press Militar con Barra** (Hombros) - {s_mil} series x {r_mil} reps ({_format_weight_label(w_mil)})
+4. **Elevaciones Laterales** (Hombros) - {s_lat} series x {r_lat} reps ({_format_weight_label(w_lat)})
+5. **Extensiones de Tríceps con Cuerda** (Brazos) - {s_trie} series x {r_trie} reps ({_format_weight_label(w_trie)})
+6. **Fondos en Paralelas** (Pecho) - {s_fond} series x {r_fond} reps ({_format_weight_label(w_fond)})
 
 ```json routine
 [
-  {{"name": "Press de Banca", "muscle": "Pecho", "sets": 4, "target_reps": 8, "weight": 60.0}},
-  {{"name": "Press Inclinado con Mancuernas", "muscle": "Pecho", "sets": 3, "target_reps": 10, "weight": 22.0}},
-  {{"name": "Press Militar con Barra", "muscle": "Hombros", "sets": 3, "target_reps": 8, "weight": 40.0}},
-  {{"name": "Elevaciones Laterales", "muscle": "Hombros", "sets": 4, "target_reps": 12, "weight": 8.0}},
-  {{"name": "Extensiones de Tríceps con Cuerda", "muscle": "Brazos", "sets": 3, "target_reps": 12, "weight": 20.0}},
-  {{"name": "Fondos en Paralelas", "muscle": "Pecho", "sets": 3, "target_reps": 10, "weight": 0.0}}
+  {{"name": "Press de Banca", "muscle": "Pecho", "sets": {s_ban}, "target_reps": {r_ban}, "weight": {w_ban}}},
+  {{"name": "Press Inclinado con Mancuernas", "muscle": "Pecho", "sets": {s_inc}, "target_reps": {r_inc}, "weight": {w_inc}}},
+  {{"name": "Press Militar con Barra", "muscle": "Hombros", "sets": {s_mil}, "target_reps": {r_mil}, "weight": {w_mil}}},
+  {{"name": "Elevaciones Laterales", "muscle": "Hombros", "sets": {s_lat}, "target_reps": {r_lat}, "weight": {w_lat}}},
+  {{"name": "Extensiones de Tríceps con Cuerda", "muscle": "Brazos", "sets": {s_trie}, "target_reps": {r_trie}, "weight": {w_trie}}},
+  {{"name": "Fondos en Paralelas", "muscle": "Pecho", "sets": {s_fond}, "target_reps": {r_fond}, "weight": {w_fond}}}
 ]
 ```
 
 💡 *Pulsa el botón de abajo para cargar estos ejercicios directamente en tu día de hoy.*"""
-    if any(w in msg for w in ["creatina", "suplemento", "suplementos", "cafeina", "cafeína", "whey", "preentreno", "pre-entreno"]):
-        return f"""Aquí tienes la evidencia científica sobre suplementación, {user_name}:
-
-1. **Monohidrato de Creatina (El rey de los suplementos)**:
-   - **Dosis**: 3 a 5 gramos diarios todos los días (incluso los días de descanso).
-   - **Momento**: A cualquier hora, la clave es la acumulación diaria en el músculo.
-   - **Mitos**: No requiere fase de carga, no causa calvicie y el agua que retiene es **intracelular** (hace al músculo verse más lleno y fuerte).
-2. **Proteína en Polvo (Whey)**:
-   - Es simplemente comida en polvo práctica. Úsala si te cuesta llegar a tu meta de proteína con alimentos enteros.
-3. **Cafeína**:
-   - Dosis efectiva: 3 a 6 mg por kg de peso corporal tomada 30-45 minutos antes de entrenar. Aumenta la fuerza y reduce la percepción del esfuerzo."""
 
     # 7. INJURIES, PAIN, TIREDNESS: Dolor, Hombro, Rodilla, Molestia
     if any(w in msg for w in ["dolor", "duele", "hombro", "rodilla", "lumbar", "lesion", "lesión", "molestia"]):
@@ -701,18 +744,17 @@ Hay 3 formas principales de aplicarla en **FitChallenge**:
 2. **Sobrecarga por Repeticiones**: Mismo peso, pero sumar 1 repetición más en cualquiera de tus series respecto a la semana pasada.
 3. **Micro-cargas**: Si no puedes saltar 5 kg, utiliza discos fraccionados de 1.25 kg (+2.5 kg total).
 
-👉 *Tip: Al anotar cualquier ejercicio en la app, verás automáticamente tu objetivo sugerido para hoy.*"""
+👉 *Tip: Al anotar o modificar cualquier ejercicio en la app, verás automáticamente tu objetivo sugerido para hoy.*"""
 
     # General fallback response
-    return f"""¡Hola {user_name}! Soy tu **FitCoach con IA** en FitChallenge.
+    return f"""¡Hola {user_name}! Soy tu **FitCoach IA** en FitChallenge.
 
-Puedo ayudarte con **cualquier consulta, duda o pregunta**:
-* 📋 **Diseño y carga de rutinas**: Pídeme una rutina de piernas, torso, espalda o brazos y la sumaremos con un clic a tu día.
+Estoy completamente integrado para resolver cualquier duda y potenciar tu rendimiento:
+* 📋 **Diseño y carga de rutinas**: Pídeme una rutina de piernas, torso, espalda o brazos y la sumaremos con un clic a tu día con tus pesos reales.
+* ✏️ **Modificar ejercicios**: Puedes ajustar series, repeticiones y cargas en cualquier momento para registrar lo que logres hoy.
 * 🎯 **Sobrecarga progresiva**: Analizo tus cargas previas y te sugiero el peso exacto para hoy.
 * 🥗 **Nutrición y suplementación**: Dudas sobre proteínas, creatina, déficit o volumen.
-* 🏋️ **Técnica y biomecánica**: Sentadilla hack, press banca, cómo evitar molestias y progresar más rápido.
+* 🏋️ **Técnica y biomecánica**: Sentadilla hack, press de banca, prevención de lesiones y recuperación.
 
-*Tip: Para desbloquear respuestas conversacionales abiertas ilimitadas con Google Gemini 2.0 Flash, conecta tu clave API gratuita desde el icono de llave en el encabezado.*
-
-¿Qué duda o entrenamiento tienes en mente hoy?"""
+¿Qué consulta o entrenamiento tienes en mente hoy?"""
 

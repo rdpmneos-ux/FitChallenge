@@ -684,6 +684,88 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         clear_data = json.loads(res_clear.data)
         self.assertFalse(clear_data["has_key"])
 
+    def test_update_exercise_sets_and_reps(self):
+        token_a, user_a = self.register_and_get_token("edit_user_a", "password123", "User A")
+        token_b, user_b = self.register_and_get_token("edit_user_b", "password123", "User B")
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+        headers_b = {"Authorization": f"Bearer {token_b}"}
+
+        # 1. Add an initial exercise with default loads (e.g. 22 kg)
+        res_add = self.client.post("/api/exercise", headers=headers_a, json={
+            "date": "2026-10-19",
+            "exercise_name": "Press Inclinado con Mancuernas",
+            "muscle_group": "Pecho",
+            "notes": "Pesos iniciales",
+            "sets": [
+                {"reps": 10, "weight": 22.0},
+                {"reps": 10, "weight": 22.0},
+                {"reps": 10, "weight": 22.0}
+            ]
+        })
+        self.assertEqual(res_add.status_code, 200)
+        data_add = json.loads(res_add.data)
+        ex_id = data_add["workout"]["exercises"][0]["id"]
+
+        # 2. User B tries to update User A's exercise -> should be 404 forbidden
+        res_hack = self.client.put(f"/api/exercise/{ex_id}", headers=headers_b, json={
+            "exercise_name": "Press Inclinado con Mancuernas",
+            "muscle_group": "Pecho",
+            "sets": [{"reps": 12, "weight": 40.0}]
+        })
+        self.assertEqual(res_hack.status_code, 404)
+
+        # 3. User A modifies their exercise to record what they actually achieved
+        # e.g. 16 reps x 35 kg, 12 reps x 40 kg, 8 reps x 40 kg
+        res_update = self.client.put(f"/api/exercise/{ex_id}", headers=headers_a, json={
+            "exercise_name": "Press Inclinado con Mancuernas",
+            "muscle_group": "Pecho",
+            "notes": "Ajuste a marca real de sesión",
+            "sets": [
+                {"reps": 16, "weight": 35.0},
+                {"reps": 12, "weight": 40.0},
+                {"reps": 8, "weight": 40.0}
+            ]
+        })
+        self.assertEqual(res_update.status_code, 200)
+        data_update = json.loads(res_update.data)
+        self.assertIn("workout", data_update)
+        updated_ex = data_update["workout"]["exercises"][0]
+        self.assertEqual(len(updated_ex["sets"]), 3)
+        self.assertEqual(updated_ex["sets"][0]["weight"], 35.0)
+        self.assertEqual(updated_ex["sets"][0]["reps"], 16)
+        self.assertEqual(updated_ex["sets"][1]["weight"], 40.0)
+        self.assertEqual(updated_ex["stats"]["max_weight"], 40.0)
+        self.assertEqual(updated_ex["stats"]["total_reps"], 36)
+
+    def test_routine_generation_uses_user_history(self):
+        token, user = self.register_and_get_token("history_routine_user", "password123", "History Fan")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # User logs their real heavy press: 40 kg
+        self.client.post("/api/exercise", headers=headers, json={
+            "date": "2026-10-18",
+            "exercise_name": "Press Inclinado con Mancuernas",
+            "muscle_group": "Pecho",
+            "sets": [
+                {"reps": 12, "weight": 40.0},
+                {"reps": 10, "weight": 40.0}
+            ]
+        })
+
+        # When requesting a routine for today, AI must adapt the load to their actual history (40 kg)
+        res_chat = self.client.post("/api/ai/coach/chat", headers=headers, json={
+            "message": "Dame una rutina de pecho para hoy"
+        })
+        self.assertEqual(res_chat.status_code, 200)
+        chat_data = json.loads(res_chat.data)
+        routine = chat_data.get("suggested_routine")
+        self.assertIsNotNone(routine)
+
+        incline_ex = next((e for e in routine if "inclinado" in e["name"].lower()), None)
+        self.assertIsNotNone(incline_ex)
+        # Weight must match their real registered weight (40 kg), NOT the placeholder 22 kg
+        self.assertEqual(incline_ex["weight"], 40.0)
+
 if __name__ == "__main__":
     unittest.main()
 

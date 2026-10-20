@@ -923,13 +923,16 @@ function renderExercisesList(exercises) {
             prevText = "Primera vez que registras este ejercicio.";
         }
 
-        // Sets table rows
+        // Sets table rows with tap-to-edit indicator
         let setsRowsHtml = "";
         ex.sets.forEach(s => {
             const weightDisplay = (s.weight && s.weight > 0) ? `${s.weight} kg` : "Peso corporal";
             setsRowsHtml += `
-                <tr class="border-b border-slate-800/40 text-xs">
-                    <td class="py-2.5 px-3 text-slate-400 font-semibold">Serie ${s.set_number}</td>
+                <tr onclick="openEditExerciseModal(${ex.id})" class="border-b border-slate-800/40 text-xs hover:bg-slate-800/50 cursor-pointer transition group" title="Toca para modificar series o peso">
+                    <td class="py-2.5 px-3 text-slate-400 font-semibold flex items-center gap-1.5">
+                        <span>Serie ${s.set_number}</span>
+                        <i data-lucide="edit-2" class="w-2.5 h-2.5 opacity-0 group-hover:opacity-70 text-indigo-400 transition"></i>
+                    </td>
                     <td class="py-2.5 px-3 font-bold text-white">${s.reps} <span class="text-[11px] text-slate-400 font-normal">reps</span></td>
                     <td class="py-2.5 px-3 font-medium text-slate-200">${weightDisplay}</td>
                 </tr>
@@ -956,11 +959,16 @@ function renderExercisesList(exercises) {
                         <p class="text-[11px] text-slate-400 mt-0.5">${prevText}</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-2 self-start sm:self-auto">
+                <div class="flex items-center gap-2 self-start sm:self-auto flex-wrap">
                     <!-- Quick Rest Timer Launch Button -->
                     <button onclick="startPresetTimer(90)" title="Iniciar descanso de 90s" class="text-xs px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold transition">
                         <i data-lucide="timer" class="w-3.5 h-3.5"></i>
                         <span>90s Descanso</span>
+                    </button>
+                    <!-- Modificar Button -->
+                    <button onclick="openEditExerciseModal(${ex.id})" title="Modificar series, repeticiones y peso" class="text-xs px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 hover:text-white border border-indigo-500/30 flex items-center gap-1 font-semibold transition">
+                        <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                        <span>Modificar</span>
                     </button>
                     ${badgeHtml}
                     <button onclick="deleteExercise(${ex.id})" title="Eliminar ejercicio" class="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition">
@@ -996,13 +1004,17 @@ function renderExercisesList(exercises) {
                 </table>
             </div>
 
-            <!-- Card Footer: Stats Pill -->
+            <!-- Card Footer: Stats Pill & Quick Edit -->
             <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/40 text-xs text-slate-400">
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-3 flex-wrap">
                     <span><strong class="text-white">${stats.total_sets}</strong> series</span>
                     <span>•</span>
                     <span><strong class="text-white">${stats.total_reps}</strong> reps totales</span>
                     ${stats.max_weight > 0 ? `<span>•</span><span>Máx: <strong class="text-white">${stats.max_weight} kg</strong></span>` : ''}
+                    <button onclick="openEditExerciseModal(${ex.id})" class="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition ml-1 cursor-pointer">
+                        <i data-lucide="edit-3" class="w-3 h-3"></i>
+                        <span>Modificar series/peso</span>
+                    </button>
                 </div>
                 ${stats.total_volume > 0 && !stats.is_bodyweight ? `
                     <div class="text-slate-300 font-semibold">
@@ -1040,8 +1052,16 @@ async function fetchPopularExercises() {
 }
 
 function openAddExerciseModal() {
+    window.editingExerciseId = null;
     const modal = document.getElementById("add-exercise-modal");
     const dateObj = parseLocalDate(currentDate);
+    const titleEl = document.getElementById("modal-exercise-title");
+    if (titleEl) titleEl.textContent = "Anotar Ejercicio";
+    const submitBtn = document.getElementById("modal-submit-exercise-btn");
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i><span>Guardar Ejercicio</span>`;
+    }
+
     document.getElementById("modal-date-display").textContent = `Fecha: ${dateObj.getDate()} de ${MONTH_NAMES_ES[dateObj.getMonth()]}`;
     document.getElementById("modal-exercise-input").value = "";
     document.getElementById("modal-exercise-notes").value = "";
@@ -1065,7 +1085,48 @@ function openAddExerciseModal() {
     }, 100);
 }
 
+function openEditExerciseModal(exerciseId) {
+    if (!currentWorkout || !currentWorkout.exercises) return;
+    const ex = currentWorkout.exercises.find(e => e.id === exerciseId);
+    if (!ex) return;
+
+    window.editingExerciseId = exerciseId;
+    const modal = document.getElementById("add-exercise-modal");
+    const dateObj = parseLocalDate(currentDate);
+
+    const titleEl = document.getElementById("modal-exercise-title");
+    if (titleEl) titleEl.textContent = "Modificar Ejercicio";
+    const submitBtn = document.getElementById("modal-submit-exercise-btn");
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i><span>Guardar Cambios</span>`;
+    }
+
+    document.getElementById("modal-date-display").textContent = `Fecha: ${dateObj.getDate()} de ${MONTH_NAMES_ES[dateObj.getMonth()]}`;
+    document.getElementById("modal-exercise-input").value = ex.exercise_name || "";
+    document.getElementById("modal-muscle-select").value = ex.muscle_group || "General";
+    document.getElementById("modal-exercise-notes").value = ex.notes || "";
+    document.getElementById("modal-previous-session-banner").classList.add("hidden");
+    lastFetchedPreviousSession = null;
+    closeExerciseDropdown();
+    updateClearButtonVisibility();
+
+    // Populate with the exercise's current sets
+    if (ex.sets && ex.sets.length > 0) {
+        currentModalSets = ex.sets.map(s => ({
+            reps: parseInt(s.reps, 10) || 10,
+            weight: parseFloat(s.weight) || 0
+        }));
+    } else {
+        currentModalSets = [{ reps: 10, weight: 0 }];
+    }
+    renderModalSetRows();
+
+    modal.classList.remove("hidden");
+    lucide.createIcons();
+}
+
 function closeAddExerciseModal() {
+    window.editingExerciseId = null;
     closeExerciseDropdown();
     document.getElementById("add-exercise-modal").classList.add("hidden");
 }
@@ -1386,6 +1447,10 @@ async function submitAddExercise() {
     }
 
     try {
+        const isEditing = Boolean(window.editingExerciseId);
+        const endpoint = isEditing ? `/api/exercise/${window.editingExerciseId}` : "/api/exercise";
+        const method = isEditing ? "PUT" : "POST";
+
         const payload = {
             date: currentDate,
             exercise_name: name,
@@ -1394,8 +1459,8 @@ async function submitAddExercise() {
             sets: currentModalSets
         };
 
-        const res = await authFetch("/api/exercise", {
-            method: "POST",
+        const res = await authFetch(endpoint, {
+            method: method,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
@@ -1412,14 +1477,14 @@ async function submitAddExercise() {
         renderWeekStrip();
         fetchPopularExercises();
 
-        if (data.feedback) {
+        if (data.feedback && data.feedback.message) {
             if (data.feedback.achieved) {
                 showToast(data.feedback.message);
             } else {
                 openMotivationalModal(data.feedback.message);
             }
         } else {
-            showToast("¡Ejercicio guardado exitosamente!");
+            showToast(isEditing ? "¡Ejercicio actualizado correctamente!" : "¡Ejercicio guardado exitosamente!");
         }
     } catch (e) {
         console.error("Error al guardar ejercicio:", e);
@@ -2339,10 +2404,10 @@ async function checkAiStatus() {
         } else {
             currentAiProvider = "local";
             if (badge) {
-                badge.className = "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1";
-                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Modo Local`;
+                badge.className = "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> FitCoach Activo`;
             }
-            if (alertBanner) alertBanner.classList.remove("hidden");
+            if (alertBanner) alertBanner.classList.add("hidden");
         }
     } catch (e) {
         if (badge) {
