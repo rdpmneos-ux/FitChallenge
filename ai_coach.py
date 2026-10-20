@@ -714,19 +714,107 @@ def generate_local_coach_response(user_message, user_context):
 
 💡 *Pulsa el botón de abajo para cargar estos ejercicios directamente en tu día de hoy.*"""
 
-    # 7. INJURIES, PAIN, TIREDNESS: Dolor, Hombro, Rodilla, Molestia
-    if any(w in msg for w in ["dolor", "duele", "hombro", "rodilla", "lumbar", "lesion", "lesión", "molestia"]):
+    # 7. EXERCISE TECHNIQUE & BIOMECHANICS: Hack, Búlgara, Banca, Inclinado, Peso Muerto, Dominadas, Laterales
+    if any(w in msg for w in ["como hacer", "cómo hacer", "tecnica", "técnica", "posicion", "posición", "postura", "forma correcta"]):
+        if any(w in msg for w in ["hack", "hacka"]):
+            return f"""Aquí tienes la técnica correcta y biomecánica para la **Sentadilla Hack**, {user_name}:
+
+1. **Colocación de los pies**:
+   - Apoya los pies en el tercio medio-alto de la plataforma, separados a la anchura de tus hombros.
+   - Puntas de los pies ligeramente abiertas hacia afuera (15° a 30°).
+   - **Clave**: Nunca despegues los talones de la base durante el movimiento.
+2. **Posición de la espalda**:
+   - Pega firmemente la zona lumbar y la espalda alta contra el respaldo acolchado. No permitas que la pelvis se despegue o rote hacia adelante en el punto bajo.
+3. **Profundidad y recorrido**:
+   - Desciende de forma controlada (2-3 segundos) hasta que tus muslos queden al menos paralelos o por debajo de la plataforma (flexión de rodilla a 90°-110°).
+   - Empuja con toda la planta del pie, haciendo foco en los cuádriceps, y no bloquees bruscamente las rodillas arriba."""
+
+        if any(w in msg for w in ["bulgara", "búlgara"]):
+            return f"""Técnica de la **Sentadilla Búlgara** para máximo estímulo y equilibrio, {user_name}:
+
+1. **Distancia y apoyo**:
+   - Apoya el empeine del pie trasero en un banco a la altura de tu rodilla.
+   - Da un paso hacia adelante con la pierna delantera (al descender, la rodilla debe quedar alineada sobre el empeine o mediopié).
+2. **Énfasis muscular según inclinación del torso**:
+   - **Para Glúteos**: Inclina el torso hacia adelante unos 20-30° manteniendo la columna neutra y da un paso ligeramente más largo.
+   - **Para Cuádriceps**: Mantén el torso vertical y permite que la rodilla avance sobre la punta del pie.
+3. **Descenso**:
+   - Baja verticalmente hasta que la rodilla trasera quede a 2-3 cm del suelo. Empuja con el talón y mediopié delantero."""
+
+        if any(w in msg for w in ["inclinado", "pecho superior"]):
+            return f"""Técnica del **Press Inclinado con Mancuernas**, {user_name}:
+
+1. **Inclinación del banco**:
+   - El ángulo ideal es de **30 grados** (a lo sumo 45°). Si lo subes a 60°, la mayor parte del trabajo se desplaza a los deltoides anteriores en lugar del pectoral superior.
+2. **Alineación de brazos y muñecas**:
+   - Mantén los codos en un ángulo de **45 a 60 grados** respecto a tu torso (forma de flecha, nunca abiertos a 90° para proteger el manguito rotador).
+   - Muñecas firmes y alineadas sobre los codos.
+3. **Retracción escapular**:
+   - Saca pecho y junta los omóplatos contra el banco durante toda la serie. Baja las mancuernas controladas hasta el nivel de la parte superior del pecho."""
+
+        if any(w in msg for w in ["peso muerto", "deadlift"]):
+            return f"""Técnica segura para el **Peso Muerto**, {user_name}:
+
+1. **Posición de partida**:
+   - Barra sobre la mitad de tus pies (pegada a unos 2-3 cm de tus espinillas).
+   - Agarre por fuera de las piernas, brazos totalmente rectos como cuerdas.
+2. **Bisagra de cadera y columna neutra**:
+   - Lleva la cadera hacia atrás (*hip hinge*). No redondees la espalda baja ni hiper-extiendas el cuello.
+   - Activa el *bracing*: llena el abdomen de aire y aprieta como un cinturón natural.
+3. **Empuje**:
+   - Piensa en **empujar el suelo con las piernas**, no en tirar con los brazos. La barra debe subir rozando tus espinillas y muslos."""
+
+        if any(w in msg for w in ["lateral", "laterales", "pajaro", "pájaro"]):
+            return f"""Técnica para **Elevaciones Laterales** (Deltoides Lateral), {user_name}:
+
+1. **Plano escapular**:
+   - No eleves los brazos exactamente en línea recta hacia los lados (plano frontal). Elévalos unos **20-30° hacia adelante** (en el plano escapular natural del hombro).
+2. **Flexión de codos**:
+   - Mantén una ligerísima flexión de codos (10-15°) fija durante todo el recorrido.
+3. **Altura y control**:
+   - Sube hasta la altura de los hombros. No utilices inercia con las piernas ni te balancees; una pausa de medio segundo arriba garantiza máxima tensión mecánica."""
+
+    # 8. TRAINING SCIENCE: RIR, RPE, Fallo, Frecuencia, Series semanales
+    if any(w in msg for w in ["rpe", "rir", "fallo", "frecuencia", "series semanales", "volumen de entrenamiento"]):
+        return f"""Claves sobre intensidad y volumen de entrenamiento, {user_name}:
+
+1. **¿Qué es RPE y RIR?**:
+   - **RIR (Repeticiones en Recámara)**: Cuántas repeticiones te faltaban para llegar al fallo absoluto.
+   - **RIR 1-2 (RPE 8-9)**: Es la zona óptima para ganar músculo. Te deja a 1 o 2 repeticiones de no poder levantar la barra, logrando el 95% del estímulo con la mitad de fatiga y riesgo articular.
+2. **¿Llegar al fallo muscular?**:
+   - En **ejercicios analíticos o en máquinas** (ej. curl de bíceps, elevaciones laterales, extensiones): Puedes ir al fallo técnico en la última serie.
+   - En **ejercicios pesados con barra libre** (ej. sentadilla, peso muerto, banca pesada): Mantén siempre **RIR 1 o 2** por seguridad.
+3. **Frecuencia óptima**:
+   - **Frecuencia 2**: Entrenar cada grupo muscular 2 veces por semana genera picos de síntesis proteica repetidos y mayor progreso que machacarlo una sola vez.
+4. **Volumen semanal**:
+   - Apunta a entre **10 y 20 series efectivas semanales** por grupo muscular."""
+
+    # 9. NUTRITION SPECIFICS: Comer de noche, Ayuno, Horarios, Mitos
+    if any(w in msg for w in ["de noche", "engorda", "ayuno", "ayunar", "horario", "arroz", "carbohidrato"]):
+        return f"""Derribando mitos sobre horarios y comidas, {user_name}:
+
+1. **¿Comer carbohidratos de noche engorda?**:
+   - **No**. El cuerpo no almacena grasa automáticamente después de cierta hora. Lo que determina si ganas músculo, pierdes grasa o subes de peso es el **balance calórico total de las 24 horas**.
+   - De hecho, cenar carbohidratos complejos ayuda a producir serotonina y melatonina, mejorando la calidad del sueño y la recuperación muscular.
+2. **¿Entrenar en ayunas quema más grasa?**:
+   - Aunque oxida más ácidos grasos durante la sesión, al final del día el balance calórico manda. Si entrenar en ayunas te resta fuerza o energía para levantar pesado, es mejor comer carbohidratos unas 1-2 horas antes.
+3. **Ayuno intermitente**:
+   - Es una estrategia cómoda para controlar el apetito reduciendo la ventana de comidas, pero no tiene ventajas anabólicas superiores frente a una distribución regular de comidas con suficiente proteína."""
+
+    # 10. INJURIES, PAIN, TIREDNESS: Dolor, Hombro, Rodilla, Molestia
+    if any(w in msg for w in ["dolor", "duele", "hombro", "rodilla", "lumbar", "lesion", "lesión", "molestia", "calentar"]):
         return f"""Mucho cuidado con las molestias articulares, {user_name}. Distingue entre agujetas musculares (DOMS) y dolor articular:
 
 1. **Dolor de Hombro en Presses**:
-   - Suele deberse a falta de retracción escapular o codos muy abiertos (a 90°). Mantén los codos a unos 45-70° de tu torso en banca o usa mancuernas con agarre neutro. Calienta el manguito rotador con rotaciones externas.
+   - Suele deberse a falta de retracción escapular o codos muy abiertos (a 90°). Mantén los codos a unos 45-60° de tu torso en banca o usa mancuernas con agarre neutro. Calienta el manguito rotador con rotaciones externas en polea.
 2. **Dolor de Rodilla en Sentadillas / Prensa**:
-   - Verifica que las rodillas sigan la línea de la punta de tus pies y no colapsen hacia adentro (valgo). No rebotes bruscamente en el punto más profundo.
+   - Verifica que las rodillas sigan la línea de la punta de tus pies y no colapsen hacia adentro (valgo). No rebotes bruscamente en el punto más profundo y calienta cuádriceps e isquios previamente.
 3. **Molestia Lumbar**:
    - Mantén la columna neutra y activa el *bracing* (aprieta el abdomen como si fueras a recibir un golpe) antes de cada repetición pesada.
-4. **Regla de Oro**: Si un ejercicio causa dolor punzante en una articulación, reduce carga o sustitúyelo por una variante sin dolor mientras te recuperas."""
+4. **Calentamiento recomendado**:
+   - 5 minutos de movilidad articular dinámica + 2 o 3 series de aproximación con cargas piramidales livianas antes de tus series efectivas de trabajo."""
 
-    # 8. REST & RECOVERY: Descanso, Sueño, Deload
+    # 11. REST & RECOVERY: Descanso, Sueño, Deload
     if any(w in msg for w in ["descanso", "tiempo", "segundo", "sueño", "dormir", "deload", "descarga"]):
         return f"""Sobre el descanso y recuperación, {user_name}:
 
@@ -735,8 +823,8 @@ def generate_local_coach_response(user_message, user_context):
 * **Sueño**: El 80% de la hormona del crecimiento y la síntesis proteica ocurre mientras duermes. Apunta a 7-8 horas de sueño de calidad.
 * **Semana de Descarga (Deload)**: Si llevas 6-8 semanas consecutivas progresando y notas fatiga articular o estancamiento, entrena una semana al 50% de series."""
 
-    # 9. STAGNATION & PROGRESSION: Sobrecarga, Estancado, No subo
-    if any(w in msg for w in ["sobrecarga", "estanc", "no subo", "meseta", "progresar", "progresiva", "peso"]):
+    # 12. STAGNATION & PROGRESSION: Sobrecarga, Estancado, No subo, Cuanto peso
+    if any(w in msg for w in ["sobrecarga", "estanc", "no subo", "meseta", "progresar", "progresiva", "peso", "cuanto subir", "cuándo subir"]):
         return f"""Hola {user_name}. La **sobrecarga progresiva** es el principio fundamental del crecimiento muscular.
 
 Hay 3 formas principales de aplicarla en **FitChallenge**:
@@ -746,15 +834,26 @@ Hay 3 formas principales de aplicarla en **FitChallenge**:
 
 👉 *Tip: Al anotar o modificar cualquier ejercicio en la app, verás automáticamente tu objetivo sugerido para hoy.*"""
 
+    # 13. MOTIVATION & MINDSET: Ganas, Pereza, Cansado, Desmotivado
+    if any(w in msg for w in ["ganas", "pereza", "cansado", "desmotivado", "motivacion", "motivación", "flojera"]):
+        return f"""¡Te entiendo perfectamente, {user_name}! La motivación es una emoción pasajera, la disciplina es un hábito que construye resultados:
+
+1. **La regla de los 5 minutos**:
+   - Ponte la ropa de entrenamiento, ve al gimnasio y haz solo el calentamiento y la primera serie. El 90% de las veces la inercia mental se rompe y terminas completando una sesión brutal.
+2. **Los días difíciles valen el doble**:
+   - Los días en que entrenas sin ganas son exactamente los que forjan tu carácter y te diferencian de quienes abandonan.
+3. **Ajuste de sesión**:
+   - Si tu cuerpo acumula fatiga real, baja un 10% el peso y enfócate en la técnica y las sensaciones. Moverte siempre es mejor que quedarte quieto."""
+
     # General fallback response
     return f"""¡Hola {user_name}! Soy tu **FitCoach IA** en FitChallenge.
 
-Estoy completamente integrado para resolver cualquier duda y potenciar tu rendimiento:
+Estoy completamente disponible de forma libre y gratuita para cualquier consulta deportiva:
 * 📋 **Diseño y carga de rutinas**: Pídeme una rutina de piernas, torso, espalda o brazos y la sumaremos con un clic a tu día con tus pesos reales.
-* ✏️ **Modificar ejercicios**: Puedes ajustar series, repeticiones y cargas en cualquier momento para registrar lo que logres hoy.
+* 🏋️ **Biomecánica y técnica**: Pregúntame cómo hacer sentadilla hack, sentadilla búlgara, press inclinado, dominadas o peso muerto.
 * 🎯 **Sobrecarga progresiva**: Analizo tus cargas previas y te sugiero el peso exacto para hoy.
-* 🥗 **Nutrición y suplementación**: Dudas sobre proteínas, creatina, déficit o volumen.
-* 🏋️ **Técnica y biomecánica**: Sentadilla hack, press de banca, prevención de lesiones y recuperación.
+* 🥗 **Nutrición y suplementación**: Dudas sobre proteínas, creatina, déficit calórico o volumen.
+* ⏱️ **Recuperación**: Tiempos de descanso, dolores articulares y cómo evitar lesiones.
 
 ¿Qué consulta o entrenamiento tienes en mente hoy?"""
 
