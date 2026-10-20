@@ -834,7 +834,24 @@ Hay 3 formas principales de aplicarla en **FitChallenge**:
 
 👉 *Tip: Al anotar o modificar cualquier ejercicio en la app, verás automáticamente tu objetivo sugerido para hoy.*"""
 
-    # 13. MOTIVATION & MINDSET: Ganas, Pereza, Cansado, Desmotivado
+    # 13. MUSIC & PLAYLIST: Música, Canciones, Playlist, Escuchar
+    if any(w in msg for w in ["musica", "música", "cancion", "canción", "canciones", "playlist", "escuchar", "tema"]):
+        return f"""Aquí tienes la evidencia científica y recomendaciones sobre **música para entrenar**, {user_name}:
+
+1. **El Tempo Ideal (BPM - Golpes por Minuto)**:
+   - **Para Fuerza e Hipertrofia pesada (Sentadillas, Presses, Remos)**: Entre **125 y 145 BPM**. Ayuda a sincronizar el reclutamiento de unidades motoras y activa el sistema nervioso simpático (adrenalina).
+   - **Para Cardio intenso o circuitos (HIIT)**: Entre **140 y 160+ BPM**.
+2. **Impacto en el RPE (Percepción del esfuerzo)**:
+   - Escuchar música que te guste reduce el esfuerzo percibido (RPE) hasta en un **10%** y retrasa la fatiga mental.
+3. **Géneros más efectivos según tu objetivo**:
+   - 🎸 **Metal / Hard Rock / Industrial** (Slipknot, Rammstein, Doom OST de Mick Gordon): Ideal para series de máxima sobrecarga o récords personales por la agresividad controlada y los graves potentes.
+   - ⚡ **Phonk / Hardstyle / Electronic / D&B**: Bombo continuo y ritmo constante, excelente para mantener el *flow* y entrenar con descansos cronometrados.
+   - 🎤 **Hip-Hop / Rap con bajos marcados / Trap** (Eminem, 50 Cent, rap noventero o actual): Perfecto para concentración, cadencia constante y aislamiento muscular.
+   - 🎬 **Bandas Sonoras Épicas / Synthwave** (Hans Zimmer, Two Steps from Hell): Si las letras te distraen y buscas concentración técnica absoluta.
+4. **Consejo táctico**:
+   - No gastes tu canción favorita en el calentamiento: resérvala para tu serie más pesada o cuando vayas a buscar la sobrecarga progresiva."""
+
+    # 14. MOTIVATION & MINDSET: Ganas, Pereza, Cansado, Desmotivado
     if any(w in msg for w in ["ganas", "pereza", "cansado", "desmotivado", "motivacion", "motivación", "flojera"]):
         return f"""¡Te entiendo perfectamente, {user_name}! La motivación es una emoción pasajera, la disciplina es un hábito que construye resultados:
 
