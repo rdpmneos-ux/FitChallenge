@@ -188,6 +188,12 @@ def init_postgres_db(db_url):
                 name VARCHAR(100) NOT NULL UNIQUE,
                 muscle_group VARCHAR(50) NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key VARCHAR(100) PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
             """)
 
             for item in seed_data.DEFAULT_POPULAR_EXERCISES:
@@ -237,6 +243,12 @@ def init_db(db_path=None):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             expires_at TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
 
@@ -1181,3 +1193,45 @@ def get_exercise_all_history(exercise_name, user_id=1, db_path=None):
             prev_stats = stats
 
         return history
+
+def get_app_setting(key, default=None, db_path=None):
+    """Retrieve an application setting value by key."""
+    if db_path is None:
+        db_path = DB_PATH
+    try:
+        with get_db(db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+            row = cur.fetchone()
+            if row:
+                return row["value"] if isinstance(row, dict) else row[0]
+    except Exception:
+        pass
+    return default
+
+def set_app_setting(key, value, db_path=None):
+    """Save or update an application setting value by key."""
+    if db_path is None:
+        db_path = DB_PATH
+    try:
+        with get_db(db_path) as conn:
+            cur = conn.cursor()
+            is_pg = bool(get_database_url() and PSYCOPG2_AVAILABLE and (db_path is None or db_path == DB_PATH))
+            if is_pg:
+                cur.execute("""
+                    INSERT INTO app_settings (key, value, updated_at)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+                """, (key, str(value)))
+            else:
+                cur.execute("""
+                    INSERT INTO app_settings (key, value, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+                """, (key, str(value)))
+            conn.commit()
+            return True
+    except Exception as e:
+        print("Error saving app setting:", e)
+        return False
+

@@ -2250,31 +2250,106 @@ function closeRestTimerModal() {
 
 let aiChatHistory = [];
 let isAiSending = false;
+let currentAiProvider = "local";
 
 function getStoredGeminiKey() {
     return localStorage.getItem("fitchallenge_gemini_key") || "";
 }
 
-function toggleAiKeySettings() {
+function toggleAiKeySettings(forceOpen) {
     const panel = document.getElementById("ai-key-settings-panel");
     if (!panel) return;
-    panel.classList.toggle("hidden");
+    if (forceOpen === true) {
+        panel.classList.remove("hidden");
+    } else {
+        panel.classList.toggle("hidden");
+    }
     const input = document.getElementById("gemini-api-key-input");
     if (input) input.value = getStoredGeminiKey();
 }
 
-function saveGeminiApiKey() {
+async function saveGeminiApiKey() {
     const input = document.getElementById("gemini-api-key-input");
     if (!input) return;
     const key = input.value.trim();
     if (key) {
         localStorage.setItem("fitchallenge_gemini_key", key);
-        showToast("Clave de Gemini guardada correctamente");
+        try {
+            const res = await authFetch("/api/ai/coach/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ api_key: key })
+            });
+            const data = await res.json();
+            currentAiProvider = data.provider || "gemini";
+            showToast(`¡Clave guardada! ${currentAiProvider.toUpperCase()} IA activada`);
+        } catch (e) {
+            showToast("Clave guardada localmente");
+        }
     } else {
-        localStorage.removeItem("fitchallenge_gemini_key");
-        showToast("Clave eliminada. Se usará el modo local.");
+        await clearGeminiApiKey();
+        return;
     }
-    document.getElementById("ai-key-settings-panel").classList.add("hidden");
+    const panel = document.getElementById("ai-key-settings-panel");
+    if (panel) panel.classList.add("hidden");
+    checkAiStatus();
+}
+
+async function clearGeminiApiKey() {
+    localStorage.removeItem("fitchallenge_gemini_key");
+    const input = document.getElementById("gemini-api-key-input");
+    if (input) input.value = "";
+    try {
+        await authFetch("/api/ai/coach/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ api_key: "" })
+        });
+    } catch (e) {}
+    currentAiProvider = "local";
+    showToast("Clave eliminada. Modo local activo.");
+    const panel = document.getElementById("ai-key-settings-panel");
+    if (panel) panel.classList.add("hidden");
+    checkAiStatus();
+}
+
+async function checkAiStatus() {
+    const badge = document.getElementById("ai-status-badge");
+    const alertBanner = document.getElementById("ai-setup-alert");
+    const localKey = getStoredGeminiKey();
+
+    try {
+        const headers = {};
+        if (localKey) headers["X-Gemini-Key"] = localKey;
+        const res = await authFetch("/api/ai/coach/status", { headers: headers });
+        const data = await res.json();
+        
+        if (data.has_key) {
+            currentAiProvider = data.provider || "gemini";
+            let label = "Gemini 2.0";
+            if (currentAiProvider === "groq") label = "Groq (Llama)";
+            else if (currentAiProvider === "openai") label = "GPT-4o mini";
+            else if (currentAiProvider === "openrouter") label = "OpenRouter";
+
+            if (badge) {
+                badge.className = "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ${label}`;
+            }
+            if (alertBanner) alertBanner.classList.add("hidden");
+        } else {
+            currentAiProvider = "local";
+            if (badge) {
+                badge.className = "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Modo Local`;
+            }
+            if (alertBanner) alertBanner.classList.remove("hidden");
+        }
+    } catch (e) {
+        if (badge) {
+            badge.className = "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 border border-slate-600 flex items-center gap-1";
+            badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Offline`;
+        }
+    }
 }
 
 function openAiCoachModal() {
@@ -2282,12 +2357,15 @@ function openAiCoachModal() {
     if (!modal) return;
     modal.classList.remove("hidden");
     
+    // Check status
+    checkAiStatus();
+
     // Initialize welcome message if empty
     if (aiChatHistory.length === 0) {
         const userName = currentAuthUser ? (currentAuthUser.name || currentAuthUser.username) : "Atleta";
         aiChatHistory.push({
             role: "model",
-            content: `¡Hola **${userName}**! Soy tu **FitCoach IA**. 💪\n\nEstoy listo para guiarte en tu sobrecarga progresiva, resolver dudas sobre técnicas o descansos, o crearte una rutina completa para hoy.\n\n¿En qué te puedo ayudar?`
+            content: `¡Hola **${userName}**! Soy tu **FitCoach IA**. 💪\n\nPuedes preguntarme sobre **cualquier tema**: sobrecarga progresiva, diseño de rutinas para hoy, técnica de ejercicios, nutrición (macros/proteína), suplementación o recuperación.\n\n¿Qué te gustaría consultar o entrenar hoy?`
         });
         renderAiMessages();
     }
@@ -2296,6 +2374,13 @@ function openAiCoachModal() {
         const input = document.getElementById("ai-chat-input");
         if (input) input.focus();
     }, 150);
+}
+
+function openAiCoachWithRoutinePrompt() {
+    openAiCoachModal();
+    setTimeout(() => {
+        sendQuickPrompt("Dame una rutina para hoy");
+    }, 200);
 }
 
 function closeAiCoachModal() {
@@ -2316,29 +2401,46 @@ function renderAiMessages() {
         const bubble = document.createElement("div");
         bubble.className = isUser
             ? "max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tr-none px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-xs sm:text-sm font-medium shadow-md shadow-emerald-500/10"
-            : "max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tl-none px-4 py-2.5 bg-slate-800/90 border border-slate-700/60 text-slate-100 text-xs sm:text-sm leading-relaxed shadow-md";
+            : "max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tl-none px-4 py-3 bg-slate-800/90 border border-slate-700/60 text-slate-100 text-xs sm:text-sm leading-relaxed shadow-md";
 
         // Markdown formatting (bold, italics, linebreaks, lists)
         let formatted = escapeHtml(msg.content)
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/```json routine[\s\S]*?```/gi, '') // Hide raw json block from bubble text
+            .replace(/```(?:json)?(?:\s*routine)?[\s\S]*?```/gi, '') // Hide any raw json block
             .replace(/\n\n/g, '<br><br>')
             .replace(/\n/g, '<br>');
 
         bubble.innerHTML = formatted;
 
-        // If routine is attached to this message, show interactive "Cargar a mi día" button
+        // If routine is attached to this message, show big prominent "Sumar rutina al día" button
         if (msg.suggested_routine && Array.isArray(msg.suggested_routine) && msg.suggested_routine.length > 0) {
             const routineCard = document.createElement("div");
-            routineCard.className = "mt-3 pt-2.5 border-t border-slate-700/80 space-y-2";
+            routineCard.className = "mt-3.5 p-3 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-950 border border-emerald-500/40 shadow-xl space-y-2.5";
+            
+            const chips = msg.suggested_routine.slice(0, 5).map(ex => 
+                `<span class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-medium">${escapeHtml(ex.name)} (${ex.sets}×${ex.target_reps})</span>`
+            ).join(" ");
+            const moreCount = msg.suggested_routine.length > 5 ? `<span class="text-[10px] text-slate-500">+${msg.suggested_routine.length - 5} más</span>` : "";
+
             routineCard.innerHTML = `
-                <div class="flex items-center justify-between">
-                    <span class="text-[11px] font-bold text-amber-300">🏋️ ${msg.suggested_routine.length} ejercicios propuestos</span>
-                    <button type="button" onclick="applyRoutineFromAi(${idx})" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md transition flex items-center gap-1">
-                        <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
-                        <span>Cargar a mi día</span>
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0">
+                            <i data-lucide="dumbbell" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <span class="text-xs font-bold text-white block">Rutina lista (${msg.suggested_routine.length} ejercicios)</span>
+                            <span class="text-[10px] text-emerald-400 font-medium">Lista para tu sesión de hoy</span>
+                        </div>
+                    </div>
+                    <button type="button" onclick="applyRoutineFromAi(${idx})" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/25 transition transform active:scale-95 flex items-center justify-center gap-1.5 shrink-0">
+                        <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                        <span>Sumar rutina al día</span>
                     </button>
+                </div>
+                <div class="flex flex-wrap items-center gap-1 pt-1 border-t border-slate-800/80">
+                    ${chips} ${moreCount}
                 </div>
             `;
             bubble.appendChild(routineCard);
@@ -2431,9 +2533,9 @@ function sendQuickPrompt(promptText) {
 
 async function applyRoutineFromAi(messageIndex) {
     const msg = aiChatHistory[messageIndex];
-    if (!msg || !msg.suggested_routine) return;
+    if (!msg || !msg.suggested_routine || !Array.isArray(msg.suggested_routine)) return;
 
-    if (!confirm(`¿Deseas agregar estos ${msg.suggested_routine.length} ejercicios sugeridos a tu sesión de hoy (${currentDate})?`)) return;
+    showToast(`Sumando ${msg.suggested_routine.length} ejercicios a tu día...`);
 
     try {
         const res = await authFetch("/api/ai/apply_routine", {
@@ -2451,13 +2553,19 @@ async function applyRoutineFromAi(messageIndex) {
             renderWeekStrip();
             fetchPopularExercises();
             closeAiCoachModal();
-            showToast("¡Rutina cargada a tu día de hoy!");
+            showToast(`¡Rutina sumada con éxito a tu día de hoy! (${msg.suggested_routine.length} ejercicios)`);
+            
+            // Smoothly scroll to workout view
+            const workoutView = document.getElementById("view-workout");
+            if (workoutView) {
+                workoutView.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
         } else {
             alert(data.error || "No se pudo aplicar la rutina.");
         }
     } catch (e) {
         console.error("Error applying routine:", e);
-        alert("Error de red al aplicar la rutina.");
+        showToast("Error de red al aplicar la rutina.");
     }
 }
 

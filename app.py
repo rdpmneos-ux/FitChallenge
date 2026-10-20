@@ -884,6 +884,45 @@ def api_ai_progressive_overload():
         "target": overload_target
     })
 
+@app.route("/api/ai/coach/status", methods=["GET"])
+def api_ai_coach_status():
+    user, err = require_auth()
+    if err:
+        return err
+    client_api_key = request.headers.get("X-Gemini-Key") or request.args.get("api_key")
+    api_key, provider = ai_coach.get_ai_api_key(client_api_key)
+    return jsonify({
+        "status": "ok",
+        "has_key": bool(api_key),
+        "provider": provider or "local"
+    })
+
+@app.route("/api/ai/coach/settings", methods=["POST"])
+def api_ai_coach_settings():
+    user, err = require_auth()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    api_key = sanitize_str(data.get("api_key", ""), max_len=255)
+    
+    if api_key:
+        provider = ai_coach.detect_ai_provider(api_key)
+        models.set_app_setting("ai_api_key", api_key)
+        return jsonify({
+            "status": "ok",
+            "message": f"Clave guardada correctamente ({provider.title()})",
+            "provider": provider,
+            "has_key": True
+        })
+    else:
+        models.set_app_setting("ai_api_key", "")
+        return jsonify({
+            "status": "ok",
+            "message": "Clave eliminada. Modo local activo.",
+            "provider": "local",
+            "has_key": False
+        })
+
 @app.route("/api/ai/coach/chat", methods=["POST"])
 def api_ai_coach_chat():
     user, err = require_auth()
@@ -894,7 +933,7 @@ def api_ai_coach_chat():
     message = sanitize_str(data.get("message", ""), max_len=1500)
     history = data.get("history", [])
     client_api_key = request.headers.get("X-Gemini-Key") or data.get("api_key")
-    api_key = ai_coach.get_gemini_api_key(client_api_key)
+    api_key, provider = ai_coach.get_ai_api_key(client_api_key)
 
     if not message:
         return jsonify({"error": "Mensaje requerido"}), 400
@@ -925,49 +964,47 @@ def api_ai_coach_chat():
         "recent_workouts": recent_workouts
     }
 
-    system_prompt = f"""Eres FitCoach IA, el entrenador personal experto de FitChallenge.
+    system_prompt = f"""Eres FitCoach IA, el entrenador personal y experto en ciencias del deporte y nutrición de FitChallenge.
 Tu alumno se llama {user_context['name']}.
-Fecha de hoy: {datetime.now().strftime('%Y-%m-%d')}.
-Historial reciente de entrenamientos:
+Fecha actual: {datetime.now().strftime('%Y-%m-%d')}.
+Historial reciente de entrenamientos del alumno:
 {chr(10).join(recent_workouts) if recent_workouts else 'Sin sesiones registradas todavía.'}
 
-Reglas clave:
-1. Especialista en SOBRECARGA PROGRESIVA (modelo de doble progresión).
-2. Si el usuario te cuenta que no levantó lo que esperaba o falló repeticiones, sé empático y motívalo con un mensaje corto y positivo recordándole que el progreso no es lineal.
-3. Respuestas concisas, útiles y con formato Markdown.
-4. Si sugieres o creas una rutina para hoy, incluye al final de tu mensaje este bloque exacto de JSON para que la app agregue un botón interactivo de un clic:
-```json routine
+Capacidades y rol:
+1. Responde a CUALQUIER consulta, duda o pregunta del usuario: sobrecargas, rutinas, técnicas de ejercicios (sentadilla hack, press de banca, peso muerto), nutrición deportiva (proteínas, calorías, déficit, volumen), suplementación (creatina, whey, cafeína), tiempos de descanso, prevención de lesiones y recuperación.
+2. Si el usuario te cuenta que no levantó lo que esperaba o falló repeticiones, sé empático y motívalo con un mensaje corto y positivo recordando que el progreso no es lineal.
+3. Respuestas claras, concisas, estructuradas y con formato Markdown.
+4. SIEMPRE que sugieras o diseñes una rutina para hoy o para un grupo muscular, incluye OBLIGATORIAMENTE al final de tu respuesta este bloque JSON exacto con los ejercicios para que la app agregue el botón interactivo de "Sumar rutina al día":
+```json
 [
-  {{"name": "Sentadilla con Barra", "muscle": "Piernas", "sets": 3, "target_reps": 10, "weight": 60.0}}
+  {{"name": "Nombre del Ejercicio", "muscle": "Piernas", "sets": 3, "target_reps": 10, "weight": 60.0}}
 ]
 ```
-Los grupos musculares permitidos son: Piernas, Pecho, Espalda, Hombros, Brazos, Core.
+Los grupos musculares válidos son: Piernas, Pecho, Espalda, Hombros, Brazos, Core.
 """
 
-    has_gemini = bool(api_key)
     reply_text = None
-    if has_gemini:
-        reply_text, api_err = ai_coach.query_gemini_api(api_key, system_prompt, message, history)
+    has_llm = bool(api_key)
+    if has_llm:
+        reply_text, api_err = ai_coach.query_llm_api(api_key, system_prompt, message, history)
         if api_err:
-            print("Gemini API notice:", api_err)
+            print(f"AI Provider ({provider}) notice:", api_err)
 
     if not reply_text:
         # High-quality sports science local fallback
         reply_text = ai_coach.generate_local_coach_response(message, user_context)
 
-    # Check for routine JSON block in the reply
-    suggested_routine = None
-    m = re.search(r'```json\s*routine\s*([\s\S]*?)```', reply_text, re.IGNORECASE)
-    if m:
-        try:
-            suggested_routine = json.loads(m.group(1).strip())
-        except Exception:
-            suggested_routine = None
+    # Multi-strategy routine extraction
+    suggested_routine = ai_coach.extract_routine_from_text(reply_text)
+    # Clean json block from the visible markdown
+    clean_reply = ai_coach.clean_routine_markdown(reply_text)
 
     return jsonify({
         "status": "ok",
-        "reply": reply_text,
-        "has_gemini": has_gemini,
+        "reply": clean_reply,
+        "has_gemini": has_llm,
+        "has_llm": has_llm,
+        "provider": provider or "local",
         "suggested_routine": suggested_routine
     })
 
@@ -989,11 +1026,12 @@ def api_ai_apply_routine():
         cur.execute("""
             INSERT INTO workouts (user_id, date, title, notes)
             VALUES (?, ?, ?, ?)
-            ON CONFLICT(user_id, date) DO UPDATE SET title = excluded.title
+            ON CONFLICT(user_id, date) DO UPDATE SET notes = COALESCE(workouts.notes, excluded.notes)
         """, (user["id"], date_str, f"Rutina IA ({date_str})", "Cargada por FitCoach IA"))
 
         cur.execute("SELECT id FROM workouts WHERE user_id = ? AND date = ?", (user["id"], date_str))
-        workout_id = cur.fetchone()["id"]
+        workout_row = cur.fetchone()
+        workout_id = workout_row["id"] if isinstance(workout_row, dict) else workout_row[0]
 
         for ex in exercises[:15]:
             ex_name = sanitize_str(ex.get("name", ""), max_len=80)
@@ -1006,6 +1044,10 @@ def api_ai_apply_routine():
                 VALUES (?, ?, ?, ?)
             """, (workout_id, ex_name, ex_muscle, "Sugerido por FitCoach IA"))
             ex_log_id = cur.lastrowid
+            if not ex_log_id:
+                cur.execute("SELECT id FROM exercise_logs WHERE workout_id = ? ORDER BY id DESC LIMIT 1", (workout_id,))
+                r = cur.fetchone()
+                ex_log_id = r["id"] if isinstance(r, dict) else r[0]
 
             num_sets = max(1, min(int(ex.get("sets", 3) or 3), 10))
             t_reps = max(1, min(int(ex.get("target_reps", 10) or 10), 100))
@@ -1025,7 +1067,7 @@ def api_ai_apply_routine():
         return jsonify({
             "status": "ok",
             "workout": workout_data,
-            "message": f"¡{len(exercises)} ejercicios cargados con éxito a la sesión!"
+            "message": f"¡{len(exercises)} ejercicios sumados a tu sesión de hoy con éxito!"
         })
 
 if __name__ == "__main__":

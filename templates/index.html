@@ -226,10 +226,16 @@
                 <p class="text-xs sm:text-sm text-slate-400 max-w-sm mx-auto mt-1 mb-5">
                     Registra tus series y repeticiones para ver la comparativa instantánea contra la última vez que entrenaste.
                 </p>
-                <button onclick="openAddExerciseModal()" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-sm font-medium transition inline-flex items-center gap-2">
-                    <i data-lucide="plus" class="w-4 h-4"></i>
-                    <span>Comenzar a registrar</span>
-                </button>
+                <div class="flex flex-wrap items-center justify-center gap-3">
+                    <button onclick="openAddExerciseModal()" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-sm font-medium transition inline-flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        <span>Anotar ejercicio</span>
+                    </button>
+                    <button onclick="openAiCoachWithRoutinePrompt()" class="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 transition inline-flex items-center gap-2">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
+                        <span>Pedir rutina a la IA</span>
+                    </button>
+                </div>
             </div>
         </section>
 
@@ -955,11 +961,11 @@
                                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online
                             </span>
                         </div>
-                        <p class="text-[11px] text-slate-400">Tu entrenador experto en sobrecarga progresiva y rutinas</p>
+                        <p class="text-[11px] text-slate-400">Experto en entrenamiento, nutrición y rutinas para hoy</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-1.5">
-                    <button onclick="toggleAiKeySettings()" title="Configurar clave Gemini" class="p-2 rounded-xl text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition">
+                    <button onclick="toggleAiKeySettings()" title="Configurar clave de IA" class="p-2 rounded-xl text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition">
                         <i data-lucide="key" class="w-4 h-4"></i>
                     </button>
                     <button onclick="closeAiCoachModal()" class="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition">
@@ -968,22 +974,38 @@
                 </div>
             </div>
 
+            <!-- Free AI Integration Alert Banner (Shown in local mode) -->
+            <div id="ai-setup-alert" class="hidden px-4 py-2.5 bg-gradient-to-r from-indigo-950 via-slate-950 to-indigo-950 border-b border-indigo-500/30 flex items-center justify-between gap-3 text-xs text-indigo-200">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-amber-300 shrink-0"></i>
+                    <span>Para consultar <strong>cualquier duda o pregunta libremente</strong>, activa tu clave gratis de Google Gemini.</span>
+                </div>
+                <button type="button" onclick="toggleAiKeySettings(true)" class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] shrink-0 transition flex items-center gap-1 shadow-sm">
+                    <i data-lucide="key" class="w-3 h-3"></i>
+                    <span>Activar Gratis</span>
+                </button>
+            </div>
+
             <!-- API Key Collapsible Settings Panel -->
-            <div id="ai-key-settings-panel" class="hidden px-5 py-3 bg-slate-950 border-b border-slate-800 text-xs text-slate-300">
-                <div class="flex items-start justify-between gap-2 mb-2">
+            <div id="ai-key-settings-panel" class="hidden px-5 py-3.5 bg-slate-950 border-b border-slate-800 text-xs text-slate-300 space-y-2.5">
+                <div class="flex items-start justify-between gap-2">
                     <div>
-                        <span class="font-bold text-amber-300 block">Clave API de Google Gemini (Gratuita & Opcional)</span>
-                        <p class="text-[11px] text-slate-400">Desbloquea respuestas ilimitadas con Gemini 2.0 Flash.</p>
+                        <span class="font-bold text-amber-300 block">Conectar Clave de IA (Google Gemini / Groq / OpenAI)</span>
+                        <p class="text-[11px] text-slate-400">Desbloquea respuestas conversacionales abiertas para cualquier duda. 100% gratuita.</p>
                     </div>
-                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 shrink-0">
-                        <span>Obtener clave gratis</span>
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 shrink-0 font-semibold">
+                        <span>Crear clave gratis</span>
                         <i data-lucide="external-link" class="w-3 h-3"></i>
                     </a>
                 </div>
                 <div class="flex items-center gap-2">
-                    <input type="password" id="gemini-api-key-input" placeholder="AIzaSy..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500">
-                    <button onclick="saveGeminiApiKey()" class="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl text-xs transition">Guardar</button>
+                    <input type="password" id="gemini-api-key-input" placeholder="Pega tu clave (AIzaSy... / gsk_... / sk-...)" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    <button type="button" onclick="saveGeminiApiKey()" class="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl text-xs transition shrink-0">Guardar</button>
+                    <button type="button" onclick="clearGeminiApiKey()" title="Quitar clave" class="p-2 text-slate-500 hover:text-rose-400 transition shrink-0">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
                 </div>
+                <p class="text-[10px] text-slate-500">Recomendado: <strong>Google Gemini 2.0 Flash</strong> (Gratis en Google AI Studio, sin tarjeta de crédito).</p>
             </div>
 
             <!-- Chat Messages Container -->
@@ -993,17 +1015,23 @@
 
             <!-- Quick Prompt Suggestions Chips -->
             <div class="px-4 py-2 border-t border-slate-800/80 bg-slate-950/40 flex items-center gap-1.5 overflow-x-auto text-[11px]">
+                <button onclick="sendQuickPrompt('Dame una rutina para hoy')" class="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-500/30 transition font-bold flex items-center gap-1">
+                    <span>📋 Rutina para hoy</span>
+                </button>
+                <button onclick="sendQuickPrompt('Créame una rutina completa de Piernas para hoy')" class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
+                    🦵 Rutina de Pierna
+                </button>
                 <button onclick="sendQuickPrompt('¿Cómo aplico sobrecarga progresiva en mis ejercicios de hoy?')" class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
                     🎯 Sobrecarga progresiva
                 </button>
-                <button onclick="sendQuickPrompt('Créame una rutina de 4 ejercicios de Torso (Empuje) para hoy')" class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
-                    📋 Rutina para hoy
+                <button onclick="sendQuickPrompt('¿Cuánta proteína debo comer al día según mi peso?')" class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
+                    🥗 ¿Cuánta proteína?
                 </button>
-                <button onclick="sendQuickPrompt('¿Cuánto tiempo debo descansar entre series para hipertrofia?')" class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
-                    ⏱️ Tiempos de descanso
+                <button onclick="sendQuickPrompt('¿Cómo y cuándo se toma la creatina monohidrato?')" class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
+                    💊 Creatina
                 </button>
-                <button onclick="sendQuickPrompt('Siento que me estanqué en un ejercicio, ¿cómo lo supero?')" class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
-                    💡 Romper estancamiento
+                <button onclick="sendQuickPrompt('¿Cuánto tiempo descansar entre series pesadas?')" class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
+                    ⏱️ Descanso
                 </button>
             </div>
 
@@ -1047,6 +1075,6 @@
     </div>
 
     <!-- Application Script -->
-    <script src="/static/js/app.js?v=2.6"></script>
+    <script src="/static/js/app.js?v=2.7"></script>
 </body>
 </html>

@@ -600,6 +600,90 @@ class WorkoutTrackerTestCase(unittest.TestCase):
         self.assertIn("40 kg", target["explanation"])
         self.assertIn("S1: 16 reps con 35 kg", target["explanation"])
 
+    def test_ai_coach_routine_generation_and_apply_flow(self):
+        token, user = self.register_and_get_token("routine_user", "password123", "Routine Fan")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 1. Ask for today's routine
+        res_chat = self.client.post("/api/ai/coach/chat", headers=headers, json={
+            "message": "Dame una rutina para hoy de piernas"
+        })
+        self.assertEqual(res_chat.status_code, 200)
+        chat_data = json.loads(res_chat.data)
+        self.assertEqual(chat_data["status"], "ok")
+        self.assertIsNotNone(chat_data["suggested_routine"])
+        self.assertGreaterEqual(len(chat_data["suggested_routine"]), 3)
+        
+        # Verify first exercise has valid structure
+        first_ex = chat_data["suggested_routine"][0]
+        self.assertIn("name", first_ex)
+        self.assertIn("muscle", first_ex)
+        self.assertIn("sets", first_ex)
+        self.assertIn("target_reps", first_ex)
+
+        # 2. Apply this suggested routine to today's date
+        res_apply = self.client.post("/api/ai/apply_routine", headers=headers, json={
+            "date": "2026-10-19",
+            "exercises": chat_data["suggested_routine"]
+        })
+        self.assertEqual(res_apply.status_code, 200)
+        apply_data = json.loads(res_apply.data)
+        self.assertEqual(apply_data["status"], "ok")
+        self.assertEqual(len(apply_data["workout"]["exercises"]), len(chat_data["suggested_routine"]))
+
+        # 3. Verify exercises are stored in workout
+        res_workout = self.client.get("/api/workout?date=2026-10-19", headers=headers)
+        self.assertEqual(res_workout.status_code, 200)
+        w_data = json.loads(res_workout.data)["workout"]
+        self.assertEqual(len(w_data["exercises"]), len(chat_data["suggested_routine"]))
+
+    def test_ai_coach_nutrition_and_general_queries(self):
+        token, user = self.register_and_get_token("diet_user", "password123", "Nutrition Fan")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Test nutrition query
+        res_prot = self.client.post("/api/ai/coach/chat", headers=headers, json={
+            "message": "¿Cuánta proteína debo comer al día?"
+        })
+        self.assertEqual(res_prot.status_code, 200)
+        data_prot = json.loads(res_prot.data)
+        self.assertIn("1.6", data_prot["reply"])
+        self.assertIn("proteína", data_prot["reply"].lower())
+
+        # Test supplements query
+        res_creat = self.client.post("/api/ai/coach/chat", headers=headers, json={
+            "message": "¿Cómo tomar la creatina?"
+        })
+        self.assertEqual(res_creat.status_code, 200)
+        data_creat = json.loads(res_creat.data)
+        self.assertIn("creatina", data_creat["reply"].lower())
+
+    def test_ai_coach_settings_and_status(self):
+        token, user = self.register_and_get_token("settings_user", "password123", "Settings User")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Status endpoint
+        res_st = self.client.get("/api/ai/coach/status", headers=headers)
+        self.assertEqual(res_st.status_code, 200)
+        self.assertIn("provider", json.loads(res_st.data))
+
+        # Save Gemini key
+        res_save = self.client.post("/api/ai/coach/settings", headers=headers, json={
+            "api_key": "AIzaSyDummyTestKeyForVerification"
+        })
+        self.assertEqual(res_save.status_code, 200)
+        save_data = json.loads(res_save.data)
+        self.assertTrue(save_data["has_key"])
+        self.assertEqual(save_data["provider"], "gemini")
+
+        # Clear key
+        res_clear = self.client.post("/api/ai/coach/settings", headers=headers, json={
+            "api_key": ""
+        })
+        self.assertEqual(res_clear.status_code, 200)
+        clear_data = json.loads(res_clear.data)
+        self.assertFalse(clear_data["has_key"])
+
 if __name__ == "__main__":
     unittest.main()
 
